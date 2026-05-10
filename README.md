@@ -78,8 +78,12 @@ Dynabolic-LM/
 │   └── json_parser.cpp
 ├── examples/                   # Example programs
 │   └── demo.cpp                # Comprehensive demo
+├── tools/                      # Standalone CLIs
+│   ├── dynabolic_solver.cpp    # JSON-in/JSON-out forward-chaining solver
+│   └── README.md               # Solver schema + usage
 ├── tests/                      # Unit tests
 │   ├── test_graph.cpp          # Graph structure tests
+│   ├── test_solver.sh          # Smoke tests for dynabolic_solver
 │   └── CMakeLists.txt
 ├── CMakeLists.txt              # CMake build (cross-platform)
 ├── Makefile                    # Make build (Linux/Mac)
