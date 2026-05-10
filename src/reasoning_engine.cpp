@@ -645,7 +645,7 @@ void ReasoningEngine::loadFromFile(const std::string& filename) {
     
     // Load links
     auto links_array = root.at("links")->asArray();
-    for (auto& link_json : links_array) {
+    for ([[maybe_unused]] auto& link_json : links_array) {
         // Link deserialization would need node references
         // This is simplified for the PoC
     }

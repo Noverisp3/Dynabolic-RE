@@ -93,8 +93,18 @@ public:
     void resolveContradiction(const std::string& fact1, const std::string& fact2, bool keep_fact1);
 };
 
+// Forward declarations for specialized reasoners (declared as friends below)
+class ForwardChainingReasoner;
+class BackwardChainingReasoner;
+class AnalogicalReasoner;
+
 // Multi-threaded Reasoning Engine
 class ReasoningEngine {
+    // Specialized reasoners need access to internal state to drive reasoning
+    friend class ForwardChainingReasoner;
+    friend class BackwardChainingReasoner;
+    friend class AnalogicalReasoner;
+
 private:
     std::map<std::string, std::shared_ptr<GraphNode>> nodes_;
     std::map<std::string, std::shared_ptr<GraphLink>> links_;
@@ -226,11 +236,6 @@ public:
     void applyAnalogy(std::shared_ptr<GraphNode> source, 
                      std::shared_ptr<GraphNode> target);
 };
-
-// Friend declarations for specialized reasoners
-class ForwardChainingReasoner;
-class BackwardChainingReasoner;
-class AnalogicalReasoner;
 
 } // namespace dynabolic
 
