@@ -8,6 +8,19 @@ namespace dynabolic {
 // Initialize static atomic counter
 std::atomic<uint32_t> IdGenerator::next_id_(1);
 
+// Process-wide pool singletons. Storage is intentionally function-local so
+// initialisation is on first use and order-of-destruction issues are bounded
+// by the C++ runtime's reverse construction order.
+ObjectPool<GraphNode>& nodePool() {
+    static ObjectPool<GraphNode> pool;
+    return pool;
+}
+
+ObjectPool<GraphLink>& linkPool() {
+    static ObjectPool<GraphLink> pool;
+    return pool;
+}
+
 // GraphNode Implementation
 GraphNode::GraphNode(const std::string& name, NodeType type)
     : numeric_id_(IdGenerator::generate()),
@@ -33,21 +46,61 @@ bool GraphNode::hasProperty(const std::string& key) const {
 }
 
 void GraphNode::addOutgoingLink(std::shared_ptr<GraphLink> link) {
-    std::unique_lock<std::shared_mutex> lock(node_mutex_);
-    outgoing_links_.push_back(link);
+    if (!link) return;
+    LinkId id = link->getNumericId();
+    // Make sure the pool can resolve this LinkId back to the same shared_ptr
+    // a getOutgoingLinks() caller would expect.
+    linkPool().registerWithId(id, link);
+    addOutgoingLink(id);
 }
 
 void GraphNode::addIncomingLink(std::shared_ptr<GraphLink> link) {
-    std::unique_lock<std::shared_mutex> lock(node_mutex_);
-    incoming_links_.push_back(link);
+    if (!link) return;
+    LinkId id = link->getNumericId();
+    linkPool().registerWithId(id, link);
+    addIncomingLink(id);
 }
 
-const std::vector<std::shared_ptr<GraphLink>>& GraphNode::getOutgoingLinks() const {
+void GraphNode::addOutgoingLink(LinkId link_id) {
+    std::unique_lock<std::shared_mutex> lock(node_mutex_);
+    outgoing_links_.push_back(link_id);
+}
+
+void GraphNode::addIncomingLink(LinkId link_id) {
+    std::unique_lock<std::shared_mutex> lock(node_mutex_);
+    incoming_links_.push_back(link_id);
+}
+
+std::vector<LinkId> GraphNode::getOutgoingLinkIds() const {
+    std::shared_lock<std::shared_mutex> lock(node_mutex_);
     return outgoing_links_;
 }
 
-const std::vector<std::shared_ptr<GraphLink>>& GraphNode::getIncomingLinks() const {
+std::vector<LinkId> GraphNode::getIncomingLinkIds() const {
+    std::shared_lock<std::shared_mutex> lock(node_mutex_);
     return incoming_links_;
+}
+
+std::vector<std::shared_ptr<GraphLink>> GraphNode::getOutgoingLinks() const {
+    std::vector<LinkId> ids = getOutgoingLinkIds();
+    std::vector<std::shared_ptr<GraphLink>> out;
+    out.reserve(ids.size());
+    auto& pool = linkPool();
+    for (LinkId id : ids) {
+        if (auto link = pool.get(id)) out.push_back(std::move(link));
+    }
+    return out;
+}
+
+std::vector<std::shared_ptr<GraphLink>> GraphNode::getIncomingLinks() const {
+    std::vector<LinkId> ids = getIncomingLinkIds();
+    std::vector<std::shared_ptr<GraphLink>> out;
+    out.reserve(ids.size());
+    auto& pool = linkPool();
+    for (LinkId id : ids) {
+        if (auto link = pool.get(id)) out.push_back(std::move(link));
+    }
+    return out;
 }
 
 void GraphNode::setActivation(double activation) {
@@ -79,27 +132,44 @@ void GraphNode::activate(const std::unordered_map<std::string, double>& context)
 }
 
 void GraphNode::propagate() {
-    if (getActivation() < 0.1) return; // Threshold for propagation
+    const double act = getActivation();
+    if (act < 0.1) return; // Threshold for propagation
 
-    for (auto& link : outgoing_links_) {
-        double signal = link->propagateSignal(getActivation());
-        auto target = link->getTarget();
+    auto& lpool = linkPool();
+    auto& npool = nodePool();
+    std::vector<LinkId> outs = getOutgoingLinkIds();
+    for (LinkId lid : outs) {
+        auto link = lpool.get(lid);
+        if (!link) continue;
+        double signal = link->propagateSignal(act);
+        auto target = npool.get(link->getTargetId());
+        if (!target) continue;
         target->setActivation(target->getActivation() + signal * 0.1);
     }
 }
 
 std::vector<std::shared_ptr<GraphNode>> GraphNode::getActiveNeighbors() const {
     std::vector<std::shared_ptr<GraphNode>> active_neighbors;
+    auto& lpool = linkPool();
+    auto& npool = nodePool();
 
-    for (auto& link : outgoing_links_) {
-        if (link->getTarget()->getActivation() > 0.1) {
-            active_neighbors.push_back(link->getTarget());
+    std::vector<LinkId> outs = getOutgoingLinkIds();
+    for (LinkId lid : outs) {
+        auto link = lpool.get(lid);
+        if (!link) continue;
+        auto target = npool.get(link->getTargetId());
+        if (target && target->getActivation() > 0.1) {
+            active_neighbors.push_back(std::move(target));
         }
     }
 
-    for (auto& link : incoming_links_) {
-        if (link->getSource()->getActivation() > 0.1) {
-            active_neighbors.push_back(link->getSource());
+    std::vector<LinkId> ins = getIncomingLinkIds();
+    for (LinkId lid : ins) {
+        auto link = lpool.get(lid);
+        if (!link) continue;
+        auto source = npool.get(link->getSourceId());
+        if (source && source->getActivation() > 0.1) {
+            active_neighbors.push_back(std::move(source));
         }
     }
 
@@ -156,10 +226,35 @@ GraphLink::GraphLink(const std::string& name,
                      LinkType type, double weight)
     : numeric_id_(IdGenerator::generate()),
       name_(name),
-      source_(source),
-      target_(target),
+      source_id_(source ? source->getNumericId() : ObjectPool<GraphNode>::INVALID_ID),
+      target_id_(target ? target->getNumericId() : ObjectPool<GraphNode>::INVALID_ID),
+      type_(type),
+      weight_(weight) {
+    // Make sure both endpoints are resolvable through the pool. Without this
+    // a link constructed before the engine has registered its nodes would
+    // dangle (getSource()/getTarget() returning null).
+    if (source) nodePool().registerWithId(source->getNumericId(), source);
+    if (target) nodePool().registerWithId(target->getNumericId(), target);
+}
+
+GraphLink::GraphLink(const std::string& name,
+                     NodeId source_id,
+                     NodeId target_id,
+                     LinkType type, double weight)
+    : numeric_id_(IdGenerator::generate()),
+      name_(name),
+      source_id_(source_id),
+      target_id_(target_id),
       type_(type),
       weight_(weight) {}
+
+std::shared_ptr<GraphNode> GraphLink::getSource() const {
+    return nodePool().get(source_id_);
+}
+
+std::shared_ptr<GraphNode> GraphLink::getTarget() const {
+    return nodePool().get(target_id_);
+}
 
 void GraphLink::setProperty(const std::string& key, const std::string& value) {
     std::unique_lock<std::shared_mutex> lock(link_mutex_);
@@ -198,8 +293,8 @@ std::string GraphLink::serialize() const {
     std::shared_lock<std::shared_mutex> lock(link_mutex_);
     std::ostringstream oss;
     oss << "lid:" << numeric_id_ << "|name:" << name_
-        << "|source:" << source_->getNumericId()
-        << "|target:" << target_->getNumericId()
+        << "|source:" << source_id_
+        << "|target:" << target_id_
         << "|type:" << static_cast<int>(type_)
         << "|weight:" << weight_;
 

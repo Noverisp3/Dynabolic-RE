@@ -561,9 +561,12 @@ ReasoningEngine::~ReasoningEngine() {
 }
 
 void ReasoningEngine::addNode(std::shared_ptr<GraphNode> node) {
+    if (!node) return;
     uint32_t nid = node->getNumericId();
     nodes_[nid] = node;
     name_to_id_[node->getName()] = nid;
+    // Register so any GraphLink using NodeId ctor can resolve this node.
+    nodePool().registerWithId(nid, node);
 }
 
 void ReasoningEngine::removeNode(const std::string& node_id) {
@@ -602,13 +605,15 @@ std::shared_ptr<GraphNode> ReasoningEngine::getNodeByNumericId(uint32_t numeric_
 }
 
 void ReasoningEngine::addLink(std::shared_ptr<GraphLink> link) {
+    if (!link) return;
     uint32_t lid = link->getNumericId();
     links_[lid] = link;
     chain_processor_->addLink(link);
+    linkPool().registerWithId(lid, link);
 
     // Update node link references
-    link->getSource()->addOutgoingLink(link);
-    link->getTarget()->addIncomingLink(link);
+    if (auto src = link->getSource()) src->addOutgoingLink(lid);
+    if (auto tgt = link->getTarget()) tgt->addIncomingLink(lid);
 }
 
 void ReasoningEngine::removeLink(const std::string& link_id) {
