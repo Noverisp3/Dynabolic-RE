@@ -12,11 +12,24 @@
 #include <atomic>
 #include <cstdint>
 
+#include "object_pool.hpp"
+
 namespace dynabolic {
 
 // Forward declarations
 class GraphLink;
+class GraphNode;
 class ReasoningEngine;
+
+// 32-bit pool-local handles. Stored in adjacency lists / link endpoints in
+// place of 16-byte shared_ptrs to keep hot-path traversal cache-dense.
+using NodeId = ObjectPool<GraphNode>::Id;
+using LinkId = ObjectPool<GraphLink>::Id;
+
+// Process-wide registries. Resolution from Id -> shared_ptr is O(1) and goes
+// through a deque slot + weak_ptr lock. See object_pool.hpp for details.
+ObjectPool<GraphNode>& nodePool();
+ObjectPool<GraphLink>& linkPool();
 
 enum class NodeType {
     CONCEPT,      // Abstract concept node
@@ -54,8 +67,11 @@ private:
     std::string name_;                // Human-readable string name
     NodeType type_;
     std::unordered_map<std::string, std::string> properties_;
-    std::vector<std::shared_ptr<GraphLink>> outgoing_links_;
-    std::vector<std::shared_ptr<GraphLink>> incoming_links_;
+    // Adjacency lists hold LinkIds (4 bytes) instead of shared_ptrs (16 bytes).
+    // ~4x denser per cache line during graph traversal; resolution to a real
+    // shared_ptr<GraphLink> goes through linkPool() lazily.
+    std::vector<LinkId> outgoing_links_;
+    std::vector<LinkId> incoming_links_;
     // Reader/writer lock: many concurrent readers, exclusive writers.
     // Cuts contention vs std::mutex when reads dominate (property/link access).
     mutable std::shared_mutex node_mutex_;
@@ -87,11 +103,22 @@ public:
     std::string getProperty(const std::string& key) const;
     bool hasProperty(const std::string& key) const;
 
-    // Link management
+    // Link management. The shared_ptr overloads are the legacy entry point;
+    // callers may also pass LinkIds directly to skip the registration step.
     void addOutgoingLink(std::shared_ptr<GraphLink> link);
     void addIncomingLink(std::shared_ptr<GraphLink> link);
-    const std::vector<std::shared_ptr<GraphLink>>& getOutgoingLinks() const;
-    const std::vector<std::shared_ptr<GraphLink>>& getIncomingLinks() const;
+    void addOutgoingLink(LinkId link_id);
+    void addIncomingLink(LinkId link_id);
+
+    // Resolved (legacy) accessors. Each call materialises shared_ptrs from the
+    // link pool, so prefer getOutgoingLinkIds() in tight loops.
+    std::vector<std::shared_ptr<GraphLink>> getOutgoingLinks() const;
+    std::vector<std::shared_ptr<GraphLink>> getIncomingLinks() const;
+
+    // Hot-path accessors. Returned snapshot is a copy of the LinkId vector to
+    // make iteration safe across concurrent mutation.
+    std::vector<LinkId> getOutgoingLinkIds() const;
+    std::vector<LinkId> getIncomingLinkIds() const;
 
     // Activation and confidence (lock-free atomic access)
     void setActivation(double activation);
@@ -124,8 +151,11 @@ class GraphLink {
 private:
     uint32_t numeric_id_;            // Fast uint32_t ID
     std::string name_;                // Human-readable name
-    std::shared_ptr<GraphNode> source_;
-    std::shared_ptr<GraphNode> target_;
+    // Endpoints are NodeIds (4 bytes) instead of shared_ptrs (16 bytes), so
+    // GraphLink is significantly smaller and the engine isn't dragging
+    // strong references back into every link.
+    NodeId source_id_;
+    NodeId target_id_;
     LinkType type_;
     double weight_;
     std::unordered_map<std::string, std::string> properties_;
@@ -138,6 +168,12 @@ public:
               std::shared_ptr<GraphNode> target,
               LinkType type, double weight = 1.0);
 
+    // Index-only constructor for callers already operating in the pool world.
+    GraphLink(const std::string& name,
+              NodeId source_id,
+              NodeId target_id,
+              LinkType type, double weight = 1.0);
+
     // Fast numeric ID
     uint32_t getNumericId() const { return numeric_id_; }
 
@@ -145,8 +181,14 @@ public:
     const std::string& getId() const { return name_; }
     const std::string& getName() const { return name_; }
 
-    std::shared_ptr<GraphNode> getSource() const { return source_; }
-    std::shared_ptr<GraphNode> getTarget() const { return target_; }
+    // Resolve endpoints through nodePool(). Returns null if the node has been
+    // destroyed (its last strong ref went away).
+    std::shared_ptr<GraphNode> getSource() const;
+    std::shared_ptr<GraphNode> getTarget() const;
+
+    // Hot-path: skip the shared_ptr round trip.
+    NodeId getSourceId() const { return source_id_; }
+    NodeId getTargetId() const { return target_id_; }
     LinkType getType() const { return type_; }
     double getWeight() const { return weight_; }
     void setWeight(double weight) { weight_ = weight; }
