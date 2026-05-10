@@ -77,13 +77,21 @@ Dynabolic-LM/
 │   ├── reasoning_engine.cpp
 │   └── json_parser.cpp
 ├── examples/                   # Example programs
-│   └── demo.cpp                # Comprehensive demo
+│   ├── demo.cpp                # Comprehensive C++ demo
+│   └── tweety_penguin.py       # End-to-end LLM-symbolic hybrid demo
 ├── tools/                      # Standalone CLIs
 │   ├── dynabolic_solver.cpp    # JSON-in/JSON-out forward-chaining solver
 │   └── README.md               # Solver schema + usage
+├── dynabolic_llm/              # Python LLM-orchestrator (stdlib only)
+│   ├── provider.py             # Ollama / OpenAI / Anthropic / Mock
+│   ├── extractor.py            # NL -> problem JSON
+│   ├── verbalizer.py           # chain -> NL answer
+│   ├── pipeline.py             # extract -> solve -> verbalise
+│   └── cli.py                  # `python -m dynabolic_llm "..."`
 ├── tests/                      # Unit tests
 │   ├── test_graph.cpp          # Graph structure tests
 │   ├── test_solver.sh          # Smoke tests for dynabolic_solver
+│   ├── test_dynabolic_llm.py   # Orchestrator tests (use MockProvider)
 │   └── CMakeLists.txt
 ├── CMakeLists.txt              # CMake build (cross-platform)
 ├── Makefile                    # Make build (Linux/Mac)
@@ -142,6 +150,58 @@ ReasoningEngine engine(4); // 4 workers
 engine.start();
 engine.activateNodeAsync("node_id", context);
 engine.waitForCompletion();
+```
+
+## LLM-symbolic hybrid (`dynabolic_llm`)
+
+A Python orchestrator that wraps an LLM around the C++ solver:
+
+```
+NL question -> [LLM extractor] -> facts/rules/goal JSON
+             -> [dynabolic_solver] -> derivation chain + final facts
+             -> [LLM verbaliser] -> NL answer with reasoning
+```
+
+The LLM does **only** extraction and verbalisation. All multi-step
+reasoning runs in the C++ engine, so every conclusion is grounded in a
+verifiable chain of rule firings. No external Python dependencies.
+
+Quickstart against a local Ollama:
+
+```bash
+# 1. Build the solver
+make
+
+# 2. Start an Ollama server with a model
+ollama serve &
+ollama pull llama3.1:8b
+
+# 3. Run the Tweety demo
+python3 examples/tweety_penguin.py
+
+# 4. Or ask anything else
+python3 -m dynabolic_llm \
+  "All humans are mammals. Mary is human. Is Mary a mammal?"
+```
+
+Or against OpenAI / Anthropic:
+
+```bash
+DYNABOLIC_LLM_PROVIDER=openai    OPENAI_API_KEY=...    python3 -m dynabolic_llm "..."
+DYNABOLIC_LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=... python3 -m dynabolic_llm "..."
+```
+
+Or offline against a canned mock (no LLM at all — useful for CI / smoke tests):
+
+```bash
+DYNABOLIC_LLM_PROVIDER=mock python3 examples/tweety_penguin.py
+```
+
+Run the unit tests:
+
+```bash
+make                              # build solver first
+python3 -m unittest tests/test_dynabolic_llm.py
 ```
 
 ## Applications
