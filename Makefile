@@ -17,12 +17,17 @@ SOURCES = $(SRC_DIR)/graph_node.cpp $(SRC_DIR)/reasoning_engine.cpp $(SRC_DIR)/j
 OBJECTS = $(BUILD_DIR)/graph_node.o $(BUILD_DIR)/reasoning_engine.o $(BUILD_DIR)/json_parser.o
 EXECUTABLE = $(BUILD_DIR)/dynabolic_demo
 
+# Tools (solver CLIs)
+TOOLS_DIR = tools
+TOOL_SOURCES = $(wildcard $(TOOLS_DIR)/*.cpp)
+TOOLS = $(patsubst $(TOOLS_DIR)/%.cpp,$(BUILD_DIR)/%,$(TOOL_SOURCES))
+
 # Example programs
 EXAMPLE_SOURCES = $(wildcard $(EXAMPLES_DIR)/*.cpp)
 EXAMPLES = $(patsubst $(EXAMPLES_DIR)/%.cpp,$(BUILD_DIR)/%,$(EXAMPLE_SOURCES))
 
 # Default target
-all: directories $(EXECUTABLE) examples
+all: directories $(EXECUTABLE) examples tools
 
 # Create build directories
 directories:
@@ -41,6 +46,12 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
 examples: $(EXAMPLES)
 
 $(BUILD_DIR)/%: $(EXAMPLES_DIR)/%.cpp $(OBJECTS)
+	$(CXX) $(CXXFLAGS) $(OBJECTS) $< -o $@ $(LDFLAGS)
+
+# Build CLI tools (e.g. dynabolic_solver)
+tools: $(TOOLS)
+
+$(BUILD_DIR)/%: $(TOOLS_DIR)/%.cpp $(OBJECTS)
 	$(CXX) $(CXXFLAGS) $(OBJECTS) $< -o $@ $(LDFLAGS)
 
 # Build and run the main demo
@@ -105,4 +116,4 @@ help:
 	@echo "  build/      - Build output"
 	@echo "  docs/       - Documentation"
 
-.PHONY: all directories run clean distclean test install uninstall docs examples tree help
+.PHONY: all directories run clean distclean test install uninstall docs examples tools tree help
