@@ -8,6 +8,7 @@
 #include <functional>
 #include <thread>
 #include <mutex>
+#include <shared_mutex>
 #include <atomic>
 #include <cstdint>
 
@@ -55,13 +56,16 @@ private:
     std::unordered_map<std::string, std::string> properties_;
     std::vector<std::shared_ptr<GraphLink>> outgoing_links_;
     std::vector<std::shared_ptr<GraphLink>> incoming_links_;
-    mutable std::mutex node_mutex_;
+    // Reader/writer lock: many concurrent readers, exclusive writers.
+    // Cuts contention vs std::mutex when reads dominate (property/link access).
+    mutable std::shared_mutex node_mutex_;
 
-    // Activation value (0.0 to 1.0)
-    double activation_;
+    // Activation value (0.0 to 1.0). std::atomic<double> avoids locking on the hot
+    // get/set path, which is hammered during signal propagation.
+    std::atomic<double> activation_;
 
-    // Confidence value (0.0 to 1.0)
-    double confidence_;
+    // Confidence value (0.0 to 1.0). Same rationale as activation_.
+    std::atomic<double> confidence_;
 
 public:
     GraphNode(const std::string& name, NodeType type);
@@ -89,20 +93,23 @@ public:
     const std::vector<std::shared_ptr<GraphLink>>& getOutgoingLinks() const;
     const std::vector<std::shared_ptr<GraphLink>>& getIncomingLinks() const;
 
-    // Activation and confidence
+    // Activation and confidence (lock-free atomic access)
     void setActivation(double activation);
-    double getActivation() const { return activation_; }
+    double getActivation() const { return activation_.load(std::memory_order_relaxed); }
     void setConfidence(double confidence);
-    double getConfidence() const { return confidence_; }
+    double getConfidence() const { return confidence_.load(std::memory_order_relaxed); }
 
     // Reasoning operations
     virtual void activate(const std::unordered_map<std::string, double>& context);
     virtual void propagate();
     virtual std::vector<std::shared_ptr<GraphNode>> getActiveNeighbors() const;
 
-    // Thread safety
+    // Thread safety. lock()/unlock() take the writer (exclusive) lock for backwards
+    // compatibility; lock_shared()/unlock_shared() take the reader (shared) lock.
     void lock() const { node_mutex_.lock(); }
     void unlock() const { node_mutex_.unlock(); }
+    void lock_shared() const { node_mutex_.lock_shared(); }
+    void unlock_shared() const { node_mutex_.unlock_shared(); }
 
     // Allow derived classes to access properties
     const std::unordered_map<std::string, std::string>& getProperties() const { return properties_; }
@@ -122,7 +129,8 @@ private:
     LinkType type_;
     double weight_;
     std::unordered_map<std::string, std::string> properties_;
-    mutable std::mutex link_mutex_;
+    // Reader/writer lock so many threads can read link properties simultaneously.
+    mutable std::shared_mutex link_mutex_;
 
 public:
     GraphLink(const std::string& name,
@@ -150,9 +158,12 @@ public:
     // Signal propagation
     double propagateSignal(double input_signal) const;
 
-    // Thread safety
+    // Thread safety. lock()/unlock() take the writer (exclusive) lock;
+    // lock_shared()/unlock_shared() take the reader (shared) lock.
     void lock() const { link_mutex_.lock(); }
     void unlock() const { link_mutex_.unlock(); }
+    void lock_shared() const { link_mutex_.lock_shared(); }
+    void unlock_shared() const { link_mutex_.unlock_shared(); }
 
     // Serialization
     std::string serialize() const;
