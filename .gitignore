@@ -1,0 +1,66 @@
+# Build directories
+build/
+bin/
+lib/
+out/
+
+# Compiled executables
+*.exe
+*.out
+*.app
+dynabolic_demo
+*_demo
+
+# Object files
+*.o
+*.obj
+*.ko
+*.elf
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile.cmake
+*.cmake
+!CMakeLists.txt
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.sln.docstates
+*.vcxproj
+*.vcxproj.filters
+*.sln
+
+# Compiled libraries
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*.temp
