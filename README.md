@@ -71,6 +71,7 @@ Dynabolic-LM/
 │   ├── graph_node.hpp          # Core graph structures
 │   ├── reasoning_engine.hpp    # Multi-threaded engine
 │   └── json_parser.hpp         # JSON persistence
+│   └── object_pool.hpp         # Memory pool
 ├── src/                        # Implementation files
 │   ├── graph_node.cpp
 │   ├── reasoning_engine.cpp
