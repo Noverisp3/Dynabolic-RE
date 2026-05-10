@@ -17,28 +17,28 @@ GraphNode::GraphNode(const std::string& name, NodeType type)
       confidence_(0.5) {}
 
 void GraphNode::setProperty(const std::string& key, const std::string& value) {
-    std::lock_guard<std::mutex> lock(node_mutex_);
+    std::unique_lock<std::shared_mutex> lock(node_mutex_);
     properties_[key] = value;
 }
 
 std::string GraphNode::getProperty(const std::string& key) const {
-    std::lock_guard<std::mutex> lock(node_mutex_);
+    std::shared_lock<std::shared_mutex> lock(node_mutex_);
     auto it = properties_.find(key);
     return (it != properties_.end()) ? it->second : "";
 }
 
 bool GraphNode::hasProperty(const std::string& key) const {
-    std::lock_guard<std::mutex> lock(node_mutex_);
+    std::shared_lock<std::shared_mutex> lock(node_mutex_);
     return properties_.find(key) != properties_.end();
 }
 
 void GraphNode::addOutgoingLink(std::shared_ptr<GraphLink> link) {
-    std::lock_guard<std::mutex> lock(node_mutex_);
+    std::unique_lock<std::shared_mutex> lock(node_mutex_);
     outgoing_links_.push_back(link);
 }
 
 void GraphNode::addIncomingLink(std::shared_ptr<GraphLink> link) {
-    std::lock_guard<std::mutex> lock(node_mutex_);
+    std::unique_lock<std::shared_mutex> lock(node_mutex_);
     incoming_links_.push_back(link);
 }
 
@@ -51,13 +51,13 @@ const std::vector<std::shared_ptr<GraphLink>>& GraphNode::getIncomingLinks() con
 }
 
 void GraphNode::setActivation(double activation) {
-    std::lock_guard<std::mutex> lock(node_mutex_);
-    activation_ = std::max(0.0, std::min(1.0, activation));
+    activation_.store(std::max(0.0, std::min(1.0, activation)),
+                      std::memory_order_relaxed);
 }
 
 void GraphNode::setConfidence(double confidence) {
-    std::lock_guard<std::mutex> lock(node_mutex_);
-    confidence_ = std::max(0.0, std::min(1.0, confidence));
+    confidence_.store(std::max(0.0, std::min(1.0, confidence)),
+                      std::memory_order_relaxed);
 }
 
 void GraphNode::activate(const std::unordered_map<std::string, double>& context) {
@@ -107,11 +107,12 @@ std::vector<std::shared_ptr<GraphNode>> GraphNode::getActiveNeighbors() const {
 }
 
 std::string GraphNode::serialize() const {
-    std::lock_guard<std::mutex> lock(node_mutex_);
+    std::shared_lock<std::shared_mutex> lock(node_mutex_);
     std::ostringstream oss;
     oss << "nid:" << numeric_id_ << "|name:" << name_
         << "|type:" << static_cast<int>(type_)
-        << "|activation:" << activation_ << "|confidence:" << confidence_;
+        << "|activation:" << activation_.load(std::memory_order_relaxed)
+        << "|confidence:" << confidence_.load(std::memory_order_relaxed);
 
     for (const auto& prop : properties_) {
         oss << "|" << prop.first << ":" << prop.second;
@@ -121,7 +122,7 @@ std::string GraphNode::serialize() const {
 }
 
 void GraphNode::deserialize(const std::string& data) {
-    std::lock_guard<std::mutex> lock(node_mutex_);
+    std::unique_lock<std::shared_mutex> lock(node_mutex_);
     std::istringstream iss(data);
     std::string token;
 
@@ -138,9 +139,9 @@ void GraphNode::deserialize(const std::string& data) {
             } else if (key == "type") {
                 type_ = static_cast<NodeType>(std::stoi(value));
             } else if (key == "activation") {
-                activation_ = std::stod(value);
+                activation_.store(std::stod(value), std::memory_order_relaxed);
             } else if (key == "confidence") {
-                confidence_ = std::stod(value);
+                confidence_.store(std::stod(value), std::memory_order_relaxed);
             } else {
                 properties_[key] = value;
             }
@@ -161,12 +162,12 @@ GraphLink::GraphLink(const std::string& name,
       weight_(weight) {}
 
 void GraphLink::setProperty(const std::string& key, const std::string& value) {
-    std::lock_guard<std::mutex> lock(link_mutex_);
+    std::unique_lock<std::shared_mutex> lock(link_mutex_);
     properties_[key] = value;
 }
 
 std::string GraphLink::getProperty(const std::string& key) const {
-    std::lock_guard<std::mutex> lock(link_mutex_);
+    std::shared_lock<std::shared_mutex> lock(link_mutex_);
     auto it = properties_.find(key);
     return (it != properties_.end()) ? it->second : "";
 }
@@ -194,7 +195,7 @@ double GraphLink::propagateSignal(double input_signal) const {
 }
 
 std::string GraphLink::serialize() const {
-    std::lock_guard<std::mutex> lock(link_mutex_);
+    std::shared_lock<std::shared_mutex> lock(link_mutex_);
     std::ostringstream oss;
     oss << "lid:" << numeric_id_ << "|name:" << name_
         << "|source:" << source_->getNumericId()
@@ -210,7 +211,7 @@ std::string GraphLink::serialize() const {
 }
 
 void GraphLink::deserialize(const std::string& data) {
-    std::lock_guard<std::mutex> lock(link_mutex_);
+    std::unique_lock<std::shared_mutex> lock(link_mutex_);
     std::istringstream iss(data);
     std::string token;
 
