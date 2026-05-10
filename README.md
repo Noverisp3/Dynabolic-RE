@@ -67,24 +67,23 @@ Modern AI frameworks (PyTorch, TensorFlow, NumPy) are **100% optimized for matri
 
 ```
 Dynabolic-LM/
-├── include/              # Public API headers
+├── include/                    # Public API headers
 │   ├── graph_node.hpp          # Core graph structures
 │   ├── reasoning_engine.hpp    # Multi-threaded engine
 │   └── json_parser.hpp         # JSON persistence
-├── src/                  # Implementation files
+├── src/                        # Implementation files
 │   ├── graph_node.cpp
 │   ├── reasoning_engine.cpp
 │   └── json_parser.cpp
-├── examples/             # Example programs
-│   └── demo.cpp                 # Comprehensive demo
-├── tests/                # Unit tests
+├── examples/                   # Example programs
+│   └── demo.cpp                # Comprehensive demo
+├── tests/                      # Unit tests
 │   ├── test_graph.cpp          # Graph structure tests
 │   └── CMakeLists.txt
-├── docs/                 # Documentation
-│   └── README.md               # This file
-├── CMakeLists.txt        # CMake build (cross-platform)
-├── Makefile              # Make build (Linux/Mac)
-└── build.bat             # Windows build script
+├── CMakeLists.txt              # CMake build (cross-platform)
+├── Makefile                    # Make build (Linux/Mac)
+└── build.bat                   # Windows build script
+└── README.md               # This file
 ```
 
 ## Build Instructions
