@@ -4,6 +4,9 @@
 #include <chrono>
 #include <set>
 #include <stack>
+#include <cmath>
+#include <queue>
+#include <sstream>
 
 namespace dynabolic {
 
@@ -28,41 +31,42 @@ std::vector<std::shared_ptr<GraphNode>> ChainOfLinks::tracePath(
     std::shared_ptr<GraphNode> start,
     std::shared_ptr<GraphNode> end,
     int max_depth) {
-    
+
     std::vector<std::shared_ptr<GraphNode>> path;
-    std::set<std::string> visited;
+    // Use uint32_t unordered_set for O(1) visited checks
+    std::unordered_set<uint32_t> visited;
     std::stack<std::pair<std::shared_ptr<GraphNode>, int>> stack;
-    
+
     stack.push({start, 0});
-    visited.insert(start->getId());
+    visited.insert(start->getNumericId());
     path.push_back(start);
-    
+
     while (!stack.empty()) {
         auto [current, depth] = stack.top();
         stack.pop();
-        
+
         if (current == end) {
             return path;
         }
-        
+
         if (depth >= max_depth) continue;
-        
+
         for (auto& link : current->getOutgoingLinks()) {
             auto neighbor = link->getTarget();
-            if (visited.find(neighbor->getId()) == visited.end()) {
-                visited.insert(neighbor->getId());
+            if (visited.find(neighbor->getNumericId()) == visited.end()) {
+                visited.insert(neighbor->getNumericId());
                 path.push_back(neighbor);
                 stack.push({neighbor, depth + 1});
             }
         }
     }
-    
+
     return {}; // No path found
 }
 
 double ChainOfLinks::calculatePathStrength(const std::vector<std::shared_ptr<GraphNode>>& path) {
     if (path.size() < 2) return 0.0;
-    
+
     double total_strength = 1.0;
     for (size_t i = 0; i < path.size() - 1; i++) {
         bool found_link = false;
@@ -75,23 +79,23 @@ double ChainOfLinks::calculatePathStrength(const std::vector<std::shared_ptr<Gra
         }
         if (!found_link) return 0.0;
     }
-    
+
     return total_strength / path.size();
 }
 
 void ChainOfLinks::propagateAlongChain(std::shared_ptr<GraphNode> start_node, double initial_activation) {
     std::lock_guard<std::mutex> lock(chain_mutex_);
     start_node->setActivation(initial_activation);
-    
+
     std::queue<std::shared_ptr<GraphNode>> queue;
     queue.push(start_node);
-    
+
     while (!queue.empty()) {
         auto current = queue.front();
         queue.pop();
-        
+
         current->propagate();
-        
+
         for (auto& link : current->getOutgoingLinks()) {
             auto target = link->getTarget();
             if (target->getActivation() > 0.1) {
@@ -103,36 +107,36 @@ void ChainOfLinks::propagateAlongChain(std::shared_ptr<GraphNode> start_node, do
 
 std::vector<std::shared_ptr<GraphLink>> ChainOfLinks::getCausalChain(std::shared_ptr<GraphNode> node) {
     std::vector<std::shared_ptr<GraphLink>> causal_links;
-    
+
     std::lock_guard<std::mutex> lock(chain_mutex_);
     for (auto& link : links_) {
         if (link->getSource() == node && link->getType() == LinkType::CAUSAL) {
             causal_links.push_back(link);
         }
     }
-    
+
     return causal_links;
 }
 
 std::vector<std::shared_ptr<GraphLink>> ChainOfLinks::getImplicationChain(std::shared_ptr<GraphNode> node) {
     std::vector<std::shared_ptr<GraphLink>> implication_links;
-    
+
     std::lock_guard<std::mutex> lock(chain_mutex_);
     for (auto& link : links_) {
         if (link->getSource() == node && link->getType() == LinkType::IMPLIES) {
             implication_links.push_back(link);
         }
     }
-    
+
     return implication_links;
 }
 
 void ChainOfLinks::optimizeChainWeights() {
     std::lock_guard<std::mutex> lock(chain_mutex_);
-    
+
     // Simple weight optimization based on activation history
     for (auto& link : links_) {
-        std::string link_key = link->getSource()->getId() + "->" + link->getTarget()->getId();
+        std::string link_key = link->getSource()->getName() + "->" + link->getTarget()->getName();
         auto it = activation_history_.find(link_key);
         if (it != activation_history_.end()) {
             double optimal_weight = std::min(1.0, it->second * 1.1);
@@ -192,15 +196,15 @@ void LogicProcessor::removeRule(const std::string& rule_id) {
 std::vector<std::string> LogicProcessor::deduceFacts() {
     std::vector<std::string> new_facts;
     bool changed = true;
-    
+
     while (changed) {
         changed = false;
         for (auto& rule : rules_) {
-            std::map<std::string, bool> fact_map;
+            std::unordered_map<std::string, bool> fact_map;
             for (const auto& fact : facts_) {
                 fact_map[fact.first] = fact.second;
             }
-            
+
             if (rule->evaluate(fact_map) && !hasFact(rule->getProperty("consequent"))) {
                 addFact(rule->getProperty("consequent"), true);
                 new_facts.push_back(rule->getProperty("consequent"));
@@ -208,13 +212,13 @@ std::vector<std::string> LogicProcessor::deduceFacts() {
             }
         }
     }
-    
+
     return new_facts;
 }
 
 bool LogicProcessor::evaluateRule(std::shared_ptr<RuleNode> rule) {
     std::lock_guard<std::mutex> lock(logic_mutex_);
-    std::map<std::string, bool> fact_map;
+    std::unordered_map<std::string, bool> fact_map;
     for (const auto& fact : facts_) {
         fact_map[fact.first] = fact.second;
     }
@@ -224,18 +228,18 @@ bool LogicProcessor::evaluateRule(std::shared_ptr<RuleNode> rule) {
 std::vector<std::shared_ptr<RuleNode>> LogicProcessor::getApplicableRules() const {
     std::vector<std::shared_ptr<RuleNode>> applicable;
     std::lock_guard<std::mutex> lock(logic_mutex_);
-    
-    std::map<std::string, bool> fact_map;
+
+    std::unordered_map<std::string, bool> fact_map;
     for (const auto& fact : facts_) {
         fact_map[fact.first] = fact.second;
     }
-    
+
     for (auto& rule : rules_) {
         if (rule->evaluate(fact_map)) {
             applicable.push_back(rule);
         }
     }
-    
+
     return applicable;
 }
 
@@ -274,7 +278,7 @@ bool LogicProcessor::IMPLIES(const std::string& antecedent, const std::string& c
 std::vector<std::pair<std::string, std::string>> LogicProcessor::findContradictions() const {
     std::vector<std::pair<std::string, std::string>> contradictions;
     std::lock_guard<std::mutex> lock(logic_mutex_);
-    
+
     for (auto it1 = facts_.begin(); it1 != facts_.end(); ++it1) {
         for (auto it2 = std::next(it1); it2 != facts_.end(); ++it2) {
             // Check for direct contradictions (same fact with opposite values)
@@ -283,7 +287,7 @@ std::vector<std::pair<std::string, std::string>> LogicProcessor::findContradicti
             }
         }
     }
-    
+
     return contradictions;
 }
 
@@ -296,11 +300,258 @@ void LogicProcessor::resolveContradiction(const std::string& fact1, const std::s
     }
 }
 
+// BayesianProcessor Implementation
+BayesianProcessor::BayesianProcessor() {}
+
+void BayesianProcessor::setPrior(const std::string& fact, double probability) {
+    std::lock_guard<std::mutex> lock(bayesian_mutex_);
+    priors_[fact] = std::max(0.0, std::min(1.0, probability));
+}
+
+double BayesianProcessor::getPrior(const std::string& fact) const {
+    std::lock_guard<std::mutex> lock(bayesian_mutex_);
+    auto it = priors_.find(fact);
+    return (it != priors_.end()) ? it->second : 0.5; // Default prior = 0.5 (uncertainty)
+}
+
+void BayesianProcessor::setConditional(const std::string& effect, const std::string& cause, double probability) {
+    std::lock_guard<std::mutex> lock(bayesian_mutex_);
+    conditionals_[effect][cause] = std::max(0.0, std::min(1.0, probability));
+}
+
+double BayesianProcessor::getConditional(const std::string& effect, const std::string& cause) const {
+    std::lock_guard<std::mutex> lock(bayesian_mutex_);
+    auto it = conditionals_.find(effect);
+    if (it != conditionals_.end()) {
+        auto jt = it->second.find(cause);
+        if (jt != it->second.end()) {
+            return jt->second;
+        }
+    }
+    return 0.5; // Default conditional probability
+}
+
+double BayesianProcessor::inferPosterior(const std::string& cause, const std::string& effect) {
+    // Bayes' theorem: P(cause | effect) = P(effect | cause) * P(cause) / P(effect)
+    double prior_cause = getPrior(cause);
+    double likelihood = getConditional(effect, cause);
+
+    // Calculate marginal probability P(effect) = sum over all possible causes
+    double marginal_effect = 0.0;
+    for (const auto& pair : priors_) {
+        double prior_alt = pair.second;
+        double conditional_alt = getConditional(effect, pair.first);
+        marginal_effect += conditional_alt * prior_alt;
+    }
+
+    if (marginal_effect < 1e-10) {
+        marginal_effect = 1e-10; // Prevent division by zero
+    }
+
+    double posterior = (likelihood * prior_cause) / marginal_effect;
+    return std::max(0.0, std::min(1.0, posterior));
+}
+
+double BayesianProcessor::combineEvidence(const std::string& hypothesis,
+                                           const std::vector<std::string>& evidence_list) {
+    // Naive Bayes approach: P(hypothesis | evidence) proportional to P(hypothesis) * product(P(evidence | hypothesis))
+    double posterior = getPrior(hypothesis);
+
+    for (const auto& evidence : evidence_list) {
+        double likelihood = getConditional(evidence, hypothesis);
+        // Use log-space to prevent underflow
+        if (posterior > 0 && likelihood > 0) {
+            posterior *= likelihood;
+        }
+    }
+
+    // Normalize (simplified - assuming binary hypothesis)
+    double prior_not_h = 1.0 - getPrior(hypothesis);
+    double product_not_h = prior_not_h;
+    for (const auto& evidence : evidence_list) {
+        double likelihood_not_h = 1.0 - getConditional(evidence, hypothesis);
+        if (product_not_h > 0 && likelihood_not_h > 0) {
+            product_not_h *= likelihood_not_h;
+        }
+    }
+
+    double normalizer = posterior + product_not_h;
+    if (normalizer < 1e-10) {
+        return posterior;
+    }
+
+    return std::max(0.0, std::min(1.0, posterior / normalizer));
+}
+
+double BayesianProcessor::resolveConflict(const std::string& fact_a, const std::string& fact_b,
+                                          const std::vector<std::string>& supporting_evidence) {
+    // Calculate posterior probabilities for both conflicting facts
+    double prob_a = combineEvidence(fact_a, supporting_evidence);
+    double prob_b = combineEvidence(fact_b, supporting_evidence);
+
+    // Calculate confidence-weighted resolution
+    double total_prob = prob_a + prob_b;
+    if (total_prob < 1e-10) {
+        return 0.5; // Equal uncertainty
+    }
+
+    // Return normalized probability for fact_a
+    return prob_a / total_prob;
+}
+
+std::unordered_map<std::string, double> BayesianProcessor::propagateProbabilities(
+    const std::string& start_fact,
+    const std::unordered_map<uint32_t, std::shared_ptr<GraphNode>>& nodes) {
+
+    std::unordered_map<std::string, double> propagated_probs;
+    propagated_probs[start_fact] = getPrior(start_fact);
+
+    std::queue<std::string> queue;
+    queue.push(start_fact);
+    std::unordered_set<std::string> visited;
+    visited.insert(start_fact);
+
+    while (!queue.empty()) {
+        std::string current = queue.front();
+        queue.pop();
+
+        // Find node by name
+        std::shared_ptr<GraphNode> current_node = nullptr;
+        for (const auto& pair : nodes) {
+            if (pair.second->getName() == current) {
+                current_node = pair.second;
+                break;
+            }
+        }
+
+        if (!current_node) continue;
+
+        auto current_prob = propagated_probs[current];
+
+        // Propagate to neighbors
+        for (const auto& link : current_node->getOutgoingLinks()) {
+            auto target = link->getTarget();
+            std::string target_id = target->getName();
+
+            if (visited.find(target_id) != visited.end()) continue;
+
+            double conditional_prob = getConditional(target_id, current);
+            double propagated_prob = current_prob * conditional_prob * link->getWeight();
+
+            propagated_probs[target_id] = propagated_prob;
+            visited.insert(target_id);
+            queue.push(target_id);
+        }
+    }
+
+    return propagated_probs;
+}
+
+double BayesianProcessor::calculateEntropy(const std::string& fact) const {
+    double p = getPrior(fact);
+    if (p <= 0.0 || p >= 1.0) {
+        return 0.0;
+    }
+    // Shannon entropy: -p*log(p) - (1-p)*log(1-p)
+    return -(p * std::log(p) + (1.0 - p) * std::log(1.0 - p));
+}
+
+double BayesianProcessor::calculateMutualInformation(const std::string& fact_a,
+                                                        const std::string& fact_b) const {
+    double p_a = getPrior(fact_a);
+    double p_b = getPrior(fact_b);
+    double p_ab = getConditional(fact_b, fact_a) * p_a; // Joint probability approximation
+
+    if (p_ab <= 0.0 || p_a <= 0.0 || p_b <= 0.0) {
+        return 0.0;
+    }
+
+    // I(A;B) = P(A,B) * log(P(A,B) / (P(A) * P(B)))
+    double ratio = p_ab / (p_a * p_b);
+    if (ratio <= 0.0) {
+        return 0.0;
+    }
+
+    return p_ab * std::log(ratio);
+}
+
+bool BayesianProcessor::acceptFact(const std::string& fact, double threshold) const {
+    return getPrior(fact) >= threshold;
+}
+
+std::string BayesianProcessor::serializeProbabilities() const {
+    std::lock_guard<std::mutex> lock(bayesian_mutex_);
+    std::ostringstream oss;
+
+    // Serialize priors
+    oss << "priors:";
+    for (const auto& pair : priors_) {
+        oss << pair.first << "=" << pair.second << ",";
+    }
+
+    // Serialize conditionals
+    oss << "|conditionals:";
+    for (const auto& outer : conditionals_) {
+        for (const auto& inner : outer.second) {
+            oss << outer.first << "|" << inner.first << "=" << inner.second << ",";
+        }
+    }
+
+    return oss.str();
+}
+
+void BayesianProcessor::deserializeProbabilities(const std::string& data) {
+    std::lock_guard<std::mutex> lock(bayesian_mutex_);
+    priors_.clear();
+    conditionals_.clear();
+
+    std::istringstream iss(data);
+    std::string section;
+
+    // Parse priors section
+    if (std::getline(iss, section, '|')) {
+        if (section.substr(0, 7) == "priors:") {
+            std::string priors_data = section.substr(7);
+            std::istringstream priors_stream(priors_data);
+            std::string pair;
+
+            while (std::getline(priors_stream, pair, ',')) {
+                size_t pos = pair.find('=');
+                if (pos != std::string::npos) {
+                    std::string fact = pair.substr(0, pos);
+                    double prob = std::stod(pair.substr(pos + 1));
+                    priors_[fact] = prob;
+                }
+            }
+        }
+    }
+
+    // Parse conditionals section
+    if (std::getline(iss, section, '|')) {
+        if (section.substr(0, 12) == "conditionals:") {
+            std::string cond_data = section.substr(12);
+            std::istringstream cond_stream(cond_data);
+            std::string pair;
+
+            while (std::getline(cond_stream, pair, ',')) {
+                size_t pipe_pos = pair.find('|');
+                size_t eq_pos = pair.find('=');
+                if (pipe_pos != std::string::npos && eq_pos != std::string::npos) {
+                    std::string effect = pair.substr(0, pipe_pos);
+                    std::string cause = pair.substr(pipe_pos + 1, eq_pos - pipe_pos - 1);
+                    double prob = std::stod(pair.substr(eq_pos + 1));
+                    conditionals_[effect][cause] = prob;
+                }
+            }
+        }
+    }
+}
+
 // ReasoningEngine Implementation
-ReasoningEngine::ReasoningEngine(int num_workers) 
+ReasoningEngine::ReasoningEngine(int num_workers)
     : running_(false), tasks_processed_(0), average_processing_time_(0.0),
       activation_threshold_(0.5), max_reasoning_depth_(10), max_workers_(num_workers) {
-    
+
     chain_processor_ = std::make_unique<ChainOfLinks>();
     logic_processor_ = std::make_unique<LogicProcessor>();
 }
@@ -310,53 +561,79 @@ ReasoningEngine::~ReasoningEngine() {
 }
 
 void ReasoningEngine::addNode(std::shared_ptr<GraphNode> node) {
-    nodes_[node->getId()] = node;
+    uint32_t nid = node->getNumericId();
+    nodes_[nid] = node;
+    name_to_id_[node->getName()] = nid;
 }
 
 void ReasoningEngine::removeNode(const std::string& node_id) {
-    auto it = nodes_.find(node_id);
-    if (it != nodes_.end()) {
+    auto it = name_to_id_.find(node_id);
+    if (it != name_to_id_.end()) {
+        uint32_t nid = it->second;
         // Remove associated links
-        for (auto& link : it->second->getOutgoingLinks()) {
-            removeLink(link->getId());
+        auto node = nodes_[nid];
+        if (node) {
+            for (auto& link : node->getOutgoingLinks()) {
+                removeLink(link->getId());
+            }
+            for (auto& link : node->getIncomingLinks()) {
+                removeLink(link->getId());
+            }
         }
-        for (auto& link : it->second->getIncomingLinks()) {
-            removeLink(link->getId());
-        }
-        nodes_.erase(it);
+        nodes_.erase(nid);
+        name_to_id_.erase(it);
     }
 }
 
 std::shared_ptr<GraphNode> ReasoningEngine::getNode(const std::string& node_id) {
-    auto it = nodes_.find(node_id);
+    auto it = name_to_id_.find(node_id);
+    if (it != name_to_id_.end()) {
+        auto jt = nodes_.find(it->second);
+        if (jt != nodes_.end()) {
+            return jt->second;
+        }
+    }
+    return nullptr;
+}
+
+std::shared_ptr<GraphNode> ReasoningEngine::getNodeByNumericId(uint32_t numeric_id) {
+    auto it = nodes_.find(numeric_id);
     return (it != nodes_.end()) ? it->second : nullptr;
 }
 
 void ReasoningEngine::addLink(std::shared_ptr<GraphLink> link) {
-    links_[link->getId()] = link;
+    uint32_t lid = link->getNumericId();
+    links_[lid] = link;
     chain_processor_->addLink(link);
-    
+
     // Update node link references
     link->getSource()->addOutgoingLink(link);
     link->getTarget()->addIncomingLink(link);
 }
 
 void ReasoningEngine::removeLink(const std::string& link_id) {
-    auto it = links_.find(link_id);
-    if (it != links_.end()) {
-        chain_processor_->removeLink(link_id);
-        links_.erase(it);
+    // Find link by name
+    for (auto it = links_.begin(); it != links_.end(); ++it) {
+        if (it->second->getId() == link_id) {
+            chain_processor_->removeLink(link_id);
+            links_.erase(it);
+            break;
+        }
     }
 }
 
 std::shared_ptr<GraphLink> ReasoningEngine::getLink(const std::string& link_id) {
-    auto it = links_.find(link_id);
-    return (it != links_.end()) ? it->second : nullptr;
+    for (auto& pair : links_) {
+        if (pair.second->getId() == link_id) {
+            return pair.second;
+        }
+    }
+    return nullptr;
 }
 
 void ReasoningEngine::start() {
     if (running_) return;
-    
+
     running_ = true;
     for (int i = 0; i < max_workers_; i++) {
         worker_threads_.emplace_back(&ReasoningEngine::workerLoop, this);
@@ -365,10 +642,10 @@ void ReasoningEngine::start() {
 
 void ReasoningEngine::stop() {
     if (!running_) return;
-    
+
     running_ = false;
     queue_cv_.notify_all();
-    
+
     for (auto& thread : worker_threads_) {
         if (thread.joinable()) {
             thread.join();
@@ -382,18 +659,18 @@ void ReasoningEngine::workerLoop() {
         ReasoningTask task;
         {
             std::unique_lock<std::mutex> lock(queue_mutex_);
-            queue_cv_.wait(lock, [this] { 
-                return !task_queue_.empty() || !running_; 
+            queue_cv_.wait(lock, [this] {
+                return !task_queue_.empty() || !running_;
             });
-            
+
             if (!running_) break;
-            
+
             if (!task_queue_.empty()) {
                 task = task_queue_.front();
                 task_queue_.pop();
             }
         }
-        
+
         if (task.node) {
             auto start = std::chrono::high_resolution_clock::now();
             processTask(task);
@@ -424,11 +701,11 @@ void ReasoningEngine::processTask(const ReasoningTask& task) {
             cleanupInactiveNodes();
             break;
     }
-    
+
     if (task.callback) {
         task.callback();
     }
-    
+
     tasks_processed_++;
 }
 
@@ -447,8 +724,8 @@ void ReasoningEngine::submitTask(const ReasoningTask& task) {
     queue_cv_.notify_one();
 }
 
-void ReasoningEngine::activateNodeAsync(const std::string& node_id, 
-                                        const std::map<std::string, double>& context) {
+void ReasoningEngine::activateNodeAsync(const std::string& node_id,
+                                        const std::unordered_map<std::string, double>& context) {
     auto node = getNode(node_id);
     if (node) {
         ReasoningTask task(ReasoningTask::ACTIVATE_NODE, node);
@@ -464,16 +741,16 @@ void ReasoningEngine::propagateAsync(const std::string& node_id) {
     }
 }
 
-void ReasoningEngine::activateNode(const std::string& node_id, 
-                                   const std::map<std::string, double>& context) {
+void ReasoningEngine::activateNode(const std::string& node_id,
+                                   const std::unordered_map<std::string, double>& context) {
     auto node = getNode(node_id);
     if (node) {
         activateNodeInternal(node, context);
     }
 }
 
-void ReasoningEngine::activateNodeInternal(std::shared_ptr<GraphNode> node, 
-                                           const std::map<std::string, double>& context) {
+void ReasoningEngine::activateNodeInternal(std::shared_ptr<GraphNode> node,
+                                             const std::unordered_map<std::string, double>& context) {
     node->activate(context);
     node->propagate();
 }
@@ -487,7 +764,7 @@ void ReasoningEngine::propagate(const std::string& node_id) {
 
 void ReasoningEngine::propagateSignal(std::shared_ptr<GraphNode> node) {
     node->propagate();
-    
+
     // Recursively propagate to active neighbors
     for (auto& neighbor : node->getActiveNeighbors()) {
         if (neighbor->getActivation() > activation_threshold_) {
@@ -503,13 +780,13 @@ void ReasoningEngine::performFullReasoningCycle() {
             pair.second->propagate();
         }
     }
-    
+
     // 2. Evaluate all rules
     evaluateAllRules();
-    
+
     // 3. Update confidences
     updateConfidences();
-    
+
     // 4. Cleanup
     cleanupInactiveNodes();
 }
@@ -548,12 +825,12 @@ std::vector<std::shared_ptr<GraphNode>> ReasoningEngine::performChainReasoning(
     const std::string& start_node_id,
     const std::string& query_node_id,
     int max_depth) {
-    
+
     auto start_node = getNode(start_node_id);
     auto query_node = getNode(query_node_id);
-    
+
     if (!start_node || !query_node) return {};
-    
+
     return chain_processor_->tracePath(start_node, query_node, max_depth);
 }
 
@@ -604,7 +881,7 @@ void ReasoningEngine::waitForCompletion() {
 void ReasoningEngine::saveToFile(const std::string& filename) {
     auto json = std::make_shared<JsonParser::JsonValue>();
     std::map<std::string, std::shared_ptr<JsonParser::JsonValue>> root_obj;
-    
+
     // Serialize nodes
     auto nodes_array = std::make_shared<JsonParser::JsonValue>();
     std::vector<std::shared_ptr<JsonParser::JsonValue>> nodes_data;
@@ -614,7 +891,7 @@ void ReasoningEngine::saveToFile(const std::string& filename) {
     }
     nodes_array->setArray(nodes_data);
     root_obj["nodes"] = nodes_array;
-    
+
     // Serialize links
     auto links_array = std::make_shared<JsonParser::JsonValue>();
     std::vector<std::shared_ptr<JsonParser::JsonValue>> links_data;
@@ -624,17 +901,17 @@ void ReasoningEngine::saveToFile(const std::string& filename) {
     }
     links_array->setArray(links_data);
     root_obj["links"] = links_array;
-    
+
     auto root_value = std::make_shared<JsonParser::JsonValue>();
     root_value->setObject(root_obj);
-    
+
     JsonParser::saveToFile(root_value, filename);
 }
 
 void ReasoningEngine::loadFromFile(const std::string& filename) {
     auto json = JsonParser::parseFile(filename);
     auto root = json->asObject();
-    
+
     // Load nodes
     auto nodes_array = root.at("nodes")->asArray();
     for (auto& node_json : nodes_array) {
@@ -642,10 +919,10 @@ void ReasoningEngine::loadFromFile(const std::string& filename) {
         node->deserialize(node_json->asString());
         addNode(node);
     }
-    
+
     // Load links
     auto links_array = root.at("links")->asArray();
-    for (auto& link_json : links_array) {
+    for ([[maybe_unused]]auto& link_json : links_array) {
         // Link deserialization would need node references
         // This is simplified for the PoC
     }
@@ -656,12 +933,12 @@ ForwardChainingReasoner::ForwardChainingReasoner(std::shared_ptr<ReasoningEngine
     : engine_(engine) {}
 
 std::vector<std::string> ForwardChainingReasoner::reasonFromFacts(
-    const std::map<std::string, bool>& initial_facts) {
-    
+    const std::unordered_map<std::string, bool>& initial_facts) {
+
     for (const auto& fact : initial_facts) {
-        engine_->getLogicProcessor()->addFact(fact.first, fact.second);
+        engine_->logic_processor_->addFact(fact.first, fact.second);
     }
-    
+
     return engine_->performLogicalDeduction();
 }
 
@@ -670,12 +947,12 @@ BackwardChainingReasoner::BackwardChainingReasoner(std::shared_ptr<ReasoningEngi
 
 std::vector<std::string> BackwardChainingReasoner::reasonToGoal(const std::string& goal) {
     std::vector<std::string> reasoning_path;
-    
+
     // Simplified backward chaining
     if (engine_->evaluateLogicalQuery(goal)) {
         reasoning_path.push_back(goal);
     }
-    
+
     return reasoning_path;
 }
 
@@ -688,33 +965,33 @@ AnalogicalReasoner::AnalogicalReasoner(std::shared_ptr<ReasoningEngine> engine)
 
 std::vector<std::shared_ptr<GraphNode>> AnalogicalReasoner::findAnalogies(
     std::shared_ptr<GraphNode> source_node) {
-    
+
     std::vector<std::shared_ptr<GraphNode>> analogies;
     const auto& nodes = engine_->getNodes();
-    
+
     for (auto& pair : nodes) {
-        if (pair.second != source_node && 
+        if (pair.second != source_node &&
             pair.second->getType() == source_node->getType()) {
             // Check for similar properties
             int similar_props = 0;
             const auto& source_props = source_node->getProperties();
             for (const auto& prop : source_props) {
-                if (pair.second->hasProperty(prop.first) && 
+                if (pair.second->hasProperty(prop.first) &&
                     pair.second->getProperty(prop.first) == prop.second) {
                     similar_props++;
                 }
             }
-            
+
             if (similar_props > 0) {
                 analogies.push_back(pair.second);
             }
         }
     }
-    
+
     return analogies;
 }
 
-void AnalogicalReasoner::applyAnalogy(std::shared_ptr<GraphNode> source, 
+void AnalogicalReasoner::applyAnalogy(std::shared_ptr<GraphNode> source,
                                      std::shared_ptr<GraphNode> target) {
     // Copy properties from source to target
     const auto& source_props = source->getProperties();

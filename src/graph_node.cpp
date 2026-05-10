@@ -5,9 +5,16 @@
 
 namespace dynabolic {
 
+// Initialize static atomic counter
+std::atomic<uint32_t> IdGenerator::next_id_(1);
+
 // GraphNode Implementation
-GraphNode::GraphNode(const std::string& id, NodeType type) 
-    : id_(id), type_(type), activation_(0.0), confidence_(0.5) {}
+GraphNode::GraphNode(const std::string& name, NodeType type)
+    : numeric_id_(IdGenerator::generate()),
+      name_(name),
+      type_(type),
+      activation_(0.0),
+      confidence_(0.5) {}
 
 void GraphNode::setProperty(const std::string& key, const std::string& value) {
     std::lock_guard<std::mutex> lock(node_mutex_);
@@ -53,11 +60,11 @@ void GraphNode::setConfidence(double confidence) {
     confidence_ = std::max(0.0, std::min(1.0, confidence));
 }
 
-void GraphNode::activate(const std::map<std::string, double>& context) {
+void GraphNode::activate(const std::unordered_map<std::string, double>& context) {
     // Default activation based on context matching
     double total_activation = 0.0;
     int matching_properties = 0;
-    
+
     for (const auto& prop : properties_) {
         auto it = context.find(prop.first);
         if (it != context.end()) {
@@ -65,7 +72,7 @@ void GraphNode::activate(const std::map<std::string, double>& context) {
             matching_properties++;
         }
     }
-    
+
     if (matching_properties > 0) {
         setActivation(total_activation / matching_properties);
     }
@@ -73,7 +80,7 @@ void GraphNode::activate(const std::map<std::string, double>& context) {
 
 void GraphNode::propagate() {
     if (getActivation() < 0.1) return; // Threshold for propagation
-    
+
     for (auto& link : outgoing_links_) {
         double signal = link->propagateSignal(getActivation());
         auto target = link->getTarget();
@@ -83,32 +90,33 @@ void GraphNode::propagate() {
 
 std::vector<std::shared_ptr<GraphNode>> GraphNode::getActiveNeighbors() const {
     std::vector<std::shared_ptr<GraphNode>> active_neighbors;
-    
+
     for (auto& link : outgoing_links_) {
         if (link->getTarget()->getActivation() > 0.1) {
             active_neighbors.push_back(link->getTarget());
         }
     }
-    
+
     for (auto& link : incoming_links_) {
         if (link->getSource()->getActivation() > 0.1) {
             active_neighbors.push_back(link->getSource());
         }
     }
-    
+
     return active_neighbors;
 }
 
 std::string GraphNode::serialize() const {
     std::lock_guard<std::mutex> lock(node_mutex_);
     std::ostringstream oss;
-    oss << "node:" << id_ << "|type:" << static_cast<int>(type_) 
+    oss << "nid:" << numeric_id_ << "|name:" << name_
+        << "|type:" << static_cast<int>(type_)
         << "|activation:" << activation_ << "|confidence:" << confidence_;
-    
+
     for (const auto& prop : properties_) {
         oss << "|" << prop.first << ":" << prop.second;
     }
-    
+
     return oss.str();
 }
 
@@ -116,15 +124,17 @@ void GraphNode::deserialize(const std::string& data) {
     std::lock_guard<std::mutex> lock(node_mutex_);
     std::istringstream iss(data);
     std::string token;
-    
+
     while (std::getline(iss, token, '|')) {
         size_t pos = token.find(':');
         if (pos != std::string::npos) {
             std::string key = token.substr(0, pos);
             std::string value = token.substr(pos + 1);
-            
-            if (key == "node") {
-                id_ = value;
+
+            if (key == "nid") {
+                numeric_id_ = std::stoul(value);
+            } else if (key == "name") {
+                name_ = value;
             } else if (key == "type") {
                 type_ = static_cast<NodeType>(std::stoi(value));
             } else if (key == "activation") {
@@ -139,11 +149,16 @@ void GraphNode::deserialize(const std::string& data) {
 }
 
 // GraphLink Implementation
-GraphLink::GraphLink(const std::string& id,
+GraphLink::GraphLink(const std::string& name,
                      std::shared_ptr<GraphNode> source,
                      std::shared_ptr<GraphNode> target,
                      LinkType type, double weight)
-    : id_(id), source_(source), target_(target), type_(type), weight_(weight) {}
+    : numeric_id_(IdGenerator::generate()),
+      name_(name),
+      source_(source),
+      target_(target),
+      type_(type),
+      weight_(weight) {}
 
 void GraphLink::setProperty(const std::string& key, const std::string& value) {
     std::lock_guard<std::mutex> lock(link_mutex_);
@@ -181,14 +196,16 @@ double GraphLink::propagateSignal(double input_signal) const {
 std::string GraphLink::serialize() const {
     std::lock_guard<std::mutex> lock(link_mutex_);
     std::ostringstream oss;
-    oss << "link:" << id_ << "|source:" << source_->getId()
-        << "|target:" << target_->getId() << "|type:" << static_cast<int>(type_)
+    oss << "lid:" << numeric_id_ << "|name:" << name_
+        << "|source:" << source_->getNumericId()
+        << "|target:" << target_->getNumericId()
+        << "|type:" << static_cast<int>(type_)
         << "|weight:" << weight_;
-    
+
     for (const auto& prop : properties_) {
         oss << "|" << prop.first << ":" << prop.second;
     }
-    
+
     return oss.str();
 }
 
@@ -196,15 +213,17 @@ void GraphLink::deserialize(const std::string& data) {
     std::lock_guard<std::mutex> lock(link_mutex_);
     std::istringstream iss(data);
     std::string token;
-    
+
     while (std::getline(iss, token, '|')) {
         size_t pos = token.find(':');
         if (pos != std::string::npos) {
             std::string key = token.substr(0, pos);
             std::string value = token.substr(pos + 1);
-            
-            if (key == "link") {
-                id_ = value;
+
+            if (key == "lid") {
+                numeric_id_ = std::stoul(value);
+            } else if (key == "name") {
+                name_ = value;
             } else if (key == "type") {
                 type_ = static_cast<LinkType>(std::stoi(value));
             } else if (key == "weight") {
@@ -224,19 +243,19 @@ void ConceptNode::addAttribute(const std::string& key, const std::string& value)
 std::vector<std::string> ConceptNode::getAttributes() const {
     std::vector<std::string> attributes;
     const auto& props = getProperties();
-    
+
     for (const auto& prop : props) {
         if (prop.first.substr(0, 5) == "attr_") {
             attributes.push_back(prop.first.substr(5) + ":" + prop.second);
         }
     }
-    
+
     return attributes;
 }
 
-void ConceptNode::activate(const std::map<std::string, double>& context) {
+void ConceptNode::activate(const std::unordered_map<std::string, double>& context) {
     GraphNode::activate(context);
-    
+
     // Additional concept-specific activation
     std::string category = getProperty("category");
     if (!category.empty()) {
@@ -258,7 +277,7 @@ void RuleNode::setConsequent(const std::string& consequent) {
     setProperty("consequent", consequent);
 }
 
-bool RuleNode::evaluate(const std::map<std::string, bool>& facts) const {
+bool RuleNode::evaluate(const std::unordered_map<std::string, bool>& facts) const {
     // Check if all antecedents are true
     for (const auto& antecedent : antecedents_) {
         auto it = facts.find(antecedent);
@@ -269,9 +288,9 @@ bool RuleNode::evaluate(const std::map<std::string, bool>& facts) const {
     return true;
 }
 
-void RuleNode::activate(const std::map<std::string, double>& context) {
+void RuleNode::activate(const std::unordered_map<std::string, double>& context) {
     GraphNode::activate(context);
-    
+
     // Rule-specific activation based on antecedent truth values
     double rule_activation = 0.0;
     for (const auto& antecedent : antecedents_) {
@@ -280,7 +299,7 @@ void RuleNode::activate(const std::map<std::string, double>& context) {
             rule_activation += it->second;
         }
     }
-    
+
     if (!antecedents_.empty()) {
         rule_activation /= antecedents_.size();
         setActivation(std::max(getActivation(), rule_activation));
@@ -300,22 +319,22 @@ void InferenceNode::addEvidence(std::shared_ptr<GraphNode> evidence) {
 
 double InferenceNode::calculateConfidence() const {
     if (evidence_nodes_.empty()) return 0.5;
-    
+
     double total_confidence = 0.0;
     for (const auto& evidence : evidence_nodes_) {
         total_confidence += evidence->getConfidence();
     }
-    
+
     return total_confidence / evidence_nodes_.size();
 }
 
-void InferenceNode::activate(const std::map<std::string, double>& context) {
+void InferenceNode::activate(const std::unordered_map<std::string, double>& context) {
     GraphNode::activate(context);
-    
+
     // Update confidence based on evidence
     double evidence_confidence = calculateConfidence();
     setConfidence(evidence_confidence);
-    
+
     // Adjust activation based on confidence
     setActivation(getActivation() * evidence_confidence);
 }
