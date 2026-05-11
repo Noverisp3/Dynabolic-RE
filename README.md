@@ -33,9 +33,17 @@ Modern AI frameworks (PyTorch, TensorFlow, NumPy) are **100% optimized for matri
 
 **Logic Processing**
 - Pure logical operations: AND, OR, NOT, IMPLIES
+- **Non-Monotonic Reasoning (TMS)**: Full Truth Maintenance System with dependency tracking.
+- **Recursive Retraction**: Automatic removal of derived conclusions when supporting facts are retracted.
 - Rule evaluation against fact databases
 - Forward chaining deduction
 - Contradiction detection
+
+**Probabilistic & Temporal Reasoning**
+- **Bayesian Processor**: Probabilistic inference with entropy, posterior calculation, and mutual information.
+- **Confidence-Based Firing**: Rules only fire when antecedent confidence exceeds a configurable threshold.
+- **Temporal Trends**: Time-stamped fact history with trend detection (INCREASING, DECREASING, STABLE).
+- **Process Understanding**: Ability to reason about trends (e.g., "Reactor-7 temperature is rising") instead of just static values.
 
 **Multi-threaded Engine**
 - Producer-consumer task queue pattern
@@ -89,7 +97,8 @@ Dynabolic-RE/
 │   ├── pipeline.py             # extract -> solve -> verbalise
 │   └── cli.py                  # `python -m dynabolic_re "..."`
 ├── tests/                      # Unit tests
-│   ├── test_graph.cpp          # Graph structure tests
+│   ├── test_graph.cpp          # Graph structure and logic tests
+│   ├── test_tms.hpp            # TMS, Bayesian, and Temporal tests
 │   ├── test_solver.sh          # Smoke tests for dynabolic_solver
 │   ├── test_dynabolic_re.py    # Orchestrator tests (use MockProvider)
 │   └── CMakeLists.txt
@@ -131,11 +140,19 @@ auto link = std::make_shared<GraphLink>("link1", mammal, dog,
                                         LinkType::HIERARCHICAL, 0.8);
 ```
 
-### Logical Reasoning
+### Logical & Probabilistic Reasoning
 ```cpp
 LogicProcessor logic;
-logic.addFact("is_mammal", true);
-bool result = logic.AND({"is_mammal", "has_fur"});
+BayesianProcessor bayesian;
+logic.setBayesianProcessor(&bayesian);
+logic.setFiringThreshold(0.7); // Only fire rules if confidence > 0.7
+
+// Temporal facts
+logic.addTemporalFact("temp_high", true, 0.4, 1000); // t=1000, conf=0.4
+logic.addTemporalFact("temp_high", true, 0.9, 2000); // t=2000, conf=0.9
+
+// Trend detection
+auto trend = logic.calculateTrend("temp_high", 5000); // INCREASING
 ```
 
 ### Chain Reasoning
