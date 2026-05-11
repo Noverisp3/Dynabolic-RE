@@ -21,7 +21,40 @@ make tools           # builds build/dynabolic_solver
 Reads a single JSON object from stdin, writes a single JSON object to stdout.
 Exit code `0` on success, `1` on input or solver error.
 
-## Input schema (V2)
+## Input schema (V3)
+
+V3 introduces ground first-order atoms — facts, antecedents, consequents,
+and goals can carry an `args` list of string constants:
+
+```json
+{
+  "facts": [
+    {"name": "parent", "args": ["alice", "bob"], "value": true},
+    {"name": "parent", "args": ["bob", "charlie"], "value": true}
+  ],
+  "rules": [
+    {
+      "name": "grandparent_alice_charlie",
+      "antecedents": [
+        {"name": "parent", "args": ["alice", "bob"], "value": true},
+        {"name": "parent", "args": ["bob", "charlie"], "value": true}
+      ],
+      "consequent": {"name": "grandparent", "args": ["alice", "charlie"], "value": true}
+    }
+  ],
+  "goal": {"name": "grandparent", "args": ["alice", "charlie"]}
+}
+```
+
+Internally the solver canonicalises `(name, args)` to a single string key
+(`parent(alice,bob)`, `grandparent(alice,charlie)`) and the existing
+reasoner is unchanged — facts are still indexed by string. Variables and
+unification are reserved for PR-10; PR-9 supports ground constants only.
+
+`args` is optional; omitting it (or passing `[]`) yields the V2 0-arity
+behaviour. Arg entries must be non-empty strings without `(`, `)`, or `,`.
+
+The pre-PR-9 V2 schema (no `args`, no first-order atoms) still works:
 
 ```json
 {
