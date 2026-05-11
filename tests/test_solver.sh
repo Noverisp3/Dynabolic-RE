@@ -188,6 +188,101 @@ run_case "v2: rule can set value=false directly" \
   "goal": "can_fly"}' \
 '"derived":true.*"final_facts":\{"can_fly":false.*"goal_value":false'
 
+# --- V3 ground first-order tests --------------------------------------
+
+# Two-hop grandparent: parent(alice,bob) /\ parent(bob,charlie) ->
+# grandparent(alice,charlie). All-ground; no variables yet (PR-10).
+run_case "v3: ground first-order grandparent" \
+'{"facts": [
+    {"name": "parent", "args": ["alice", "bob"],    "value": true},
+    {"name": "parent", "args": ["bob",   "charlie"], "value": true}
+  ],
+  "rules": [
+    {"name": "grandparent_alice_charlie",
+     "antecedents": [
+       {"name": "parent", "args": ["alice", "bob"],    "value": true},
+       {"name": "parent", "args": ["bob",   "charlie"], "value": true}
+     ],
+     "consequent": {"name": "grandparent", "args": ["alice", "charlie"], "value": true}}
+  ],
+  "goal": {"name": "grandparent", "args": ["alice", "charlie"]}}' \
+'"derived":true.*"final_facts":\{[^}]*"grandparent\(alice,charlie\)":true'
+
+# Different arg tuples are different facts: parent(alice,bob) does NOT
+# satisfy parent(alice,charlie). The rule must not fire.
+run_case "v3: different arg tuples are distinct facts" \
+'{"facts": [
+    {"name": "parent", "args": ["alice", "bob"], "value": true}
+  ],
+  "rules": [
+    {"name": "r1",
+     "antecedents": [{"name": "parent", "args": ["alice", "charlie"], "value": true}],
+     "consequent":  {"name": "x", "args": [], "value": true}}
+  ],
+  "goal": {"name": "x"}}' \
+'"derived":false'
+
+# V3 facts can mix with V2 0-arity facts in the same problem.
+run_case "v3: mixed-arity facts and rules" \
+'{"facts": [
+    {"name": "is_alive", "value": true},
+    {"name": "loves", "args": ["alice", "bob"], "value": true}
+  ],
+  "rules": [
+    {"name": "r1",
+     "antecedents": [
+       {"name": "is_alive", "value": true},
+       {"name": "loves", "args": ["alice", "bob"], "value": true}
+     ],
+     "consequent": {"name": "happy", "args": ["alice"], "value": true}}
+  ],
+  "goal": {"name": "happy", "args": ["alice"]}}' \
+'"derived":true.*"goal_value":true'
+
+# V3 NAF works on first-order atoms too.
+run_case "v3: NAF on first-order atom (target not asserted)" \
+'{"facts": [
+    {"name": "person", "args": ["alice"], "value": true}
+  ],
+  "rules": [
+    {"name": "innocent_unless_charged",
+     "antecedents": [
+       {"name": "person", "args": ["alice"], "value": true},
+       {"name": "charged", "args": ["alice"], "value": false}
+     ],
+     "consequent": {"name": "innocent", "args": ["alice"], "value": true}}
+  ],
+  "goal": {"name": "innocent", "args": ["alice"]}}' \
+'"derived":true.*"goal_value":true'
+
+# V3 string-goal back-compat: a string goal still works against V2 facts
+# even when the problem has V3 facts elsewhere.
+run_case "v3: string goal back-compat" \
+'{"facts": [
+    {"name": "parent", "args": ["a", "b"], "value": true},
+    {"name": "alive", "value": true}
+  ],
+  "rules": [{"name": "r1",
+             "antecedents": [{"name": "alive", "value": true}],
+             "consequent": {"name": "happy", "value": true}}],
+  "goal": "happy"}' \
+'"derived":true.*"goal_value":true'
+
+# Variables in args are not yet supported and must error out cleanly.
+run_case "v3: variables in args error out (reserved for PR-10)" \
+'{"facts": [{"name": "p", "args": ["a"], "value": true}],
+  "rules": [{"name": "r1",
+             "antecedents": [{"name": "p", "args": [{"var": "X"}], "value": true}],
+             "consequent": {"name": "q", "args": [{"var": "X"}], "value": true}}],
+  "goal": "q"}' \
+'"error":.*variables are not yet supported.*"ok":false'
+
+# Args with reserved characters (paren, comma) error out.
+run_case "v3: args reject parens/commas" \
+'{"facts": [{"name": "p", "args": ["bad(name)"], "value": true}],
+  "rules": [], "goal": "x"}' \
+'"ok":false'
+
 echo
 echo "Results: $pass passed, $fail failed"
 [[ "$fail" -eq 0 ]]

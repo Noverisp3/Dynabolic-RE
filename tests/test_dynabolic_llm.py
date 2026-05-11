@@ -163,6 +163,65 @@ class TestSolverWrapper(unittest.TestCase):
         with self.assertRaises(SolverError):
             solve({"facts": [], "rules": []}, binary=Path("/nonexistent/dynabolic_solver"))
 
+    def test_v3_ground_first_order(self) -> None:
+        # PR-9 smoke test: ground first-order atoms round-trip through the
+        # Python wrapper. Variables / unification land in PR-10.
+        problem = {
+            "facts": [
+                {"name": "parent", "args": ["alice", "bob"],     "value": True},
+                {"name": "parent", "args": ["bob",   "charlie"], "value": True},
+            ],
+            "rules": [{
+                "name": "grandparent_alice_charlie",
+                "antecedents": [
+                    {"name": "parent", "args": ["alice", "bob"],     "value": True},
+                    {"name": "parent", "args": ["bob",   "charlie"], "value": True},
+                ],
+                "consequent": {"name": "grandparent",
+                               "args": ["alice", "charlie"],
+                               "value": True},
+            }],
+            "goal": {"name": "grandparent", "args": ["alice", "charlie"]},
+        }
+        result = solve(problem)
+        self.assertTrue(result.derived)
+        self.assertTrue(result.goal_value)
+        self.assertEqual(len(result.chain), 1)
+        self.assertEqual(result.chain[0]["concluded"], "grandparent(alice,charlie)")
+        self.assertIn("grandparent(alice,charlie)", result.final_facts)
+
+    def test_v3_arg_mismatch_does_not_fire(self) -> None:
+        # parent(alice,bob) does NOT satisfy parent(alice,charlie).
+        problem = {
+            "facts": [{"name": "parent", "args": ["alice", "bob"], "value": True}],
+            "rules": [{
+                "name": "r1",
+                "antecedents": [
+                    {"name": "parent", "args": ["alice", "charlie"], "value": True}
+                ],
+                "consequent": {"name": "x", "args": [], "value": True},
+            }],
+            "goal": {"name": "x"},
+        }
+        result = solve(problem)
+        self.assertFalse(result.derived)
+        self.assertEqual(result.chain, [])
+
+    def test_v3_variables_not_yet_supported(self) -> None:
+        # PR-10 will add this. Until then the solver must reject cleanly.
+        problem = {
+            "facts": [{"name": "p", "args": ["a"], "value": True}],
+            "rules": [{
+                "name": "r1",
+                "antecedents": [{"name": "p", "args": [{"var": "X"}], "value": True}],
+                "consequent": {"name": "q", "args": [{"var": "X"}], "value": True},
+            }],
+            "goal": "q",
+        }
+        with self.assertRaises(SolverError) as ctx:
+            solve(problem)
+        self.assertIn("variables are not yet supported", str(ctx.exception))
+
 
 class TestVerbalizer(unittest.TestCase):
     def setUp(self) -> None:

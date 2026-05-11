@@ -126,6 +126,66 @@ struct TieSkip {
     std::vector<std::pair<std::string, bool>> rules;   // {rule_name, would_set_value}
 };
 
+// First-order helpers ----------------------------------------------------
+//
+// PR-9 introduces ground first-order atoms: facts, antecedents, consequents,
+// and goals can carry an `args` list of string constants. Internally we
+// canonicalise (name, args) to a single string key (e.g. `parent(alice,bob)`)
+// so the reasoner is unchanged: it still indexes facts by string. Variables
+// land in PR-10.
+
+std::string canonicalName(const std::string& name,
+                          const std::vector<std::string>& args) {
+    if (args.empty()) return name;
+    std::string s = name;
+    s += '(';
+    for (size_t i = 0; i < args.size(); ++i) {
+        if (i) s += ',';
+        s += args[i];
+    }
+    s += ')';
+    return s;
+}
+
+// Parse an `args` array of string constants. Throws on variables (objects)
+// to make the PR-9 -> PR-10 boundary explicit.
+std::vector<std::string> parseArgs(const JsonValuePtr& node,
+                                   const std::string& context) {
+    std::vector<std::string> out;
+    if (!node) return out;
+    if (node->getType() != JsonParser::ARRAY) {
+        throw std::runtime_error(context + ".args must be an array");
+    }
+    out.reserve(node->asArray().size());
+    for (const auto& arg : node->asArray()) {
+        if (!arg) {
+            throw std::runtime_error(context + ".args entry is null");
+        }
+        if (arg->getType() == JsonParser::STRING) {
+            const auto& s = arg->asString();
+            if (s.empty()) {
+                throw std::runtime_error(context + ".args entry must be non-empty");
+            }
+            if (s.find(',') != std::string::npos
+                || s.find('(') != std::string::npos
+                || s.find(')') != std::string::npos) {
+                throw std::runtime_error(
+                    context + ".args entry must not contain ',', '(' or ')'");
+            }
+            out.push_back(s);
+        } else if (arg->getType() == JsonParser::OBJECT) {
+            // Variables ({"var": "X"}) are reserved for PR-10.
+            throw std::runtime_error(
+                context + ".args entry: variables are not yet supported "
+                "(coming in PR-10); use string constants only");
+        } else {
+            throw std::runtime_error(
+                context + ".args entry must be a string constant");
+        }
+    }
+    return out;
+}
+
 // JSON helpers ------------------------------------------------------------
 
 JsonValuePtr makeString(const std::string& s) {
@@ -166,7 +226,10 @@ void emitError(const std::string& message) {
     std::cout << err->serialize() << std::endl;
 }
 
-// Parse an antecedent that may be a V1 string or a V2 {name, value} object.
+// Parse an antecedent. Accepts:
+//   V1 string                       -> {name, [], value:true}
+//   V2 {name, value}                 -> {name, [], value}
+//   V3 {name, args, value}           -> {canonicalName(name,args), value}
 Antecedent parseAntecedent(const JsonValuePtr& node) {
     if (!node) throw std::runtime_error("antecedent is null");
     if (node->getType() == JsonParser::STRING) {
@@ -185,10 +248,15 @@ Antecedent parseAntecedent(const JsonValuePtr& node) {
     if (value->getType() != JsonParser::BOOLEAN) {
         throw std::runtime_error("antecedent.value must be a boolean");
     }
-    return Antecedent{name->asString(), value->asBool()};
+    std::vector<std::string> args;
+    auto args_it = obj.find("args");
+    if (args_it != obj.end()) {
+        args = parseArgs(args_it->second, "antecedent");
+    }
+    return Antecedent{canonicalName(name->asString(), args), value->asBool()};
 }
 
-// Parse a consequent that may be a V1 string or a V2 {name, value} object.
+// Parse a consequent. Same shapes as antecedent.
 Consequent parseConsequent(const JsonValuePtr& node) {
     if (!node) throw std::runtime_error("consequent is null");
     if (node->getType() == JsonParser::STRING) {
@@ -207,7 +275,12 @@ Consequent parseConsequent(const JsonValuePtr& node) {
     if (value->getType() != JsonParser::BOOLEAN) {
         throw std::runtime_error("consequent.value must be a boolean");
     }
-    return Consequent{name->asString(), value->asBool()};
+    std::vector<std::string> args;
+    auto args_it = obj.find("args");
+    if (args_it != obj.end()) {
+        args = parseArgs(args_it->second, "consequent");
+    }
+    return Consequent{canonicalName(name->asString(), args), value->asBool()};
 }
 
 // Input parsing -----------------------------------------------------------
@@ -239,7 +312,12 @@ ParsedProblem parseProblem(const JsonValuePtr& root) {
             if (value->getType() != JsonParser::BOOLEAN) {
                 throw std::runtime_error("fact.value must be a boolean");
             }
-            out.facts[name->asString()] = value->asBool();
+            std::vector<std::string> args;
+            auto args_it = fact_obj.find("args");
+            if (args_it != fact_obj.end()) {
+                args = parseArgs(args_it->second, "fact");
+            }
+            out.facts[canonicalName(name->asString(), args)] = value->asBool();
         }
     }
 
@@ -285,14 +363,32 @@ ParsedProblem parseProblem(const JsonValuePtr& root) {
         }
     }
 
-    // goal (optional string)
+    // goal (optional). Accepts:
+    //   V1/V2 string                  -> 0-arity predicate name
+    //   V3 object {name, args}        -> canonicalised first-order atom
     auto goal_it = top.find("goal");
     if (goal_it != top.end()) {
-        if (goal_it->second->getType() != JsonParser::STRING) {
-            throw std::runtime_error("'goal' must be a string");
+        const auto& g = goal_it->second;
+        if (g->getType() == JsonParser::STRING) {
+            out.goal = g->asString();
+            out.has_goal = !out.goal.empty();
+        } else if (g->getType() == JsonParser::OBJECT) {
+            const auto& gobj = g->asObject();
+            const auto& gname = requireField(gobj, "name", "goal");
+            if (gname->getType() != JsonParser::STRING) {
+                throw std::runtime_error("goal.name must be a string");
+            }
+            std::vector<std::string> gargs;
+            auto gargs_it = gobj.find("args");
+            if (gargs_it != gobj.end()) {
+                gargs = parseArgs(gargs_it->second, "goal");
+            }
+            out.goal = canonicalName(gname->asString(), gargs);
+            out.has_goal = !out.goal.empty();
+        } else {
+            throw std::runtime_error(
+                "'goal' must be a string or {name, args} object");
         }
-        out.goal = goal_it->second->asString();
-        out.has_goal = !out.goal.empty();
     }
 
     return out;
