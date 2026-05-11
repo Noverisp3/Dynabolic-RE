@@ -155,6 +155,55 @@ std::string ChainOfLinks::serializeChain() const {
     return oss.str();
 }
 
+void LogicProcessor::addTemporalFact(const std::string& fact, bool value, double confidence, uint64_t timestamp) {
+    std::lock_guard<std::mutex> lock(logic_mutex_);
+    temporal_history_[fact].emplace_back(value, confidence, timestamp);
+    
+    // Sort history by timestamp to ensure trend analysis is correct
+    std::sort(temporal_history_[fact].begin(), temporal_history_[fact].end(), 
+              [](const TemporalFact& a, const TemporalFact& b) {
+                  return a.timestamp < b.timestamp;
+              });
+
+    // Update current fact and Bayesian prior if it's the latest
+    if (temporal_history_[fact].back().timestamp == timestamp) {
+        facts_[fact] = value;
+        if (bayesian_processor_) {
+            bayesian_processor_->setPrior(fact, confidence);
+        }
+    }
+}
+
+LogicProcessor::Trend LogicProcessor::calculateTrend(const std::string& fact, uint64_t window_ms) const {
+    std::lock_guard<std::mutex> lock(logic_mutex_);
+    auto it = temporal_history_.find(fact);
+    if (it == temporal_history_.end() || it->second.size() < 2) {
+        return Trend::UNKNOWN;
+    }
+
+    const auto& history = it->second;
+    uint64_t now = history.back().timestamp;
+    
+    std::vector<const TemporalFact*> window;
+    for (auto rit = history.rbegin(); rit != history.rend(); ++rit) {
+        if (now - rit->timestamp <= window_ms) {
+            window.push_back(&(*rit));
+        } else {
+            break;
+        }
+    }
+
+    if (window.size() < 2) return Trend::UNKNOWN;
+
+    // Analyze confidence or value trends. 
+    // For many boolean logic systems, "Increasing" might mean the confidence in the fact being 'true' is rising.
+    double start_conf = window.back()->confidence;
+    double end_conf = window.front()->confidence;
+
+    if (std::abs(end_conf - start_conf) < 0.05) return Trend::STABLE;
+    return (end_conf > start_conf) ? Trend::INCREASING : Trend::DECREASING;
+}
+
 // LogicProcessor Implementation
 void LogicProcessor::addFact(const std::string& fact, bool value, bool is_explicit) {
     std::lock_guard<std::mutex> lock(logic_mutex_);

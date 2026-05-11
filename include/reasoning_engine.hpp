@@ -69,10 +69,22 @@ public:
 // Bayesian Processor - Probabilistic reasoning with conditional probability
 class BayesianProcessor;
 
+struct TemporalFact {
+    bool value;
+    double confidence;
+    uint64_t timestamp; // Epoch in milliseconds or logical ticks
+
+    TemporalFact(bool v = false, double c = 0.5, uint64_t t = 0)
+        : value(v), confidence(c), timestamp(t) {}
+};
+
 // Logic Processor - Pure logical reasoning without matrices
 class LogicProcessor {
 private:
     std::unordered_map<std::string, bool> facts_;
+    // Temporal history for trend analysis
+    std::unordered_map<std::string, std::vector<TemporalFact>> temporal_history_;
+    
     std::vector<std::shared_ptr<RuleNode>> rules_;
     
     // TMS: Justification table. Maps a fact to the IDs of rules that support it.
@@ -102,6 +114,11 @@ public:
         firing_threshold_ = threshold;
     }
     void addFact(const std::string& fact, bool value, bool is_explicit = true);
+    void addTemporalFact(const std::string& fact, bool value, double confidence, uint64_t timestamp);
+    
+    enum class Trend { INCREASING, DECREASING, STABLE, UNKNOWN };
+    Trend calculateTrend(const std::string& fact, uint64_t window_ms) const;
+
     void removeFact(const std::string& fact);
     void retractFact(const std::string& fact); // Recursive retraction
     bool hasFact(const std::string& fact) const;

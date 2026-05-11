@@ -99,7 +99,24 @@ void testTMS() {
     assert(bp.getPrior("F") >= 0.7); // F should have inherited/derived confidence
     std::cout << "Bayesian Step 2: Rule fired (confidence 0.8 > threshold 0.7) OK" << std::endl;
 
-    std::cout << "All TMS and Bayesian tests passed!" << std::endl;
+    // 6. Temporal Trend Analysis
+    std::cout << "Testing Temporal Trend Analysis..." << std::endl;
+    // Reactor-7 scenario: temperature increasing
+    lp.addTemporalFact("Reactor-7_temp_high", true, 0.4, 1000); // t0: confidence 0.4
+    lp.addTemporalFact("Reactor-7_temp_high", true, 0.6, 2000); // t1: confidence 0.6
+    lp.addTemporalFact("Reactor-7_temp_high", true, 0.9, 3000); // t2: confidence 0.9
+
+    auto trend = lp.calculateTrend("Reactor-7_temp_high", 5000);
+    assert(trend == LogicProcessor::Trend::INCREASING);
+    std::cout << "Temporal Step 1: Trend correctly identified as INCREASING OK" << std::endl;
+
+    // Stable trend
+    lp.addTemporalFact("Stable_sensor", true, 0.5, 1000);
+    lp.addTemporalFact("Stable_sensor", true, 0.51, 2000);
+    assert(lp.calculateTrend("Stable_sensor", 5000) == LogicProcessor::Trend::STABLE);
+    std::cout << "Temporal Step 2: Trend correctly identified as STABLE OK" << std::endl;
+
+    std::cout << "All TMS, Bayesian, and Temporal tests passed!" << std::endl;
 }
 
 } // namespace dynabolic
