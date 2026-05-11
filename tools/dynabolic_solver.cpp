@@ -208,9 +208,9 @@ JsonValuePtr makeArray(const std::vector<JsonValuePtr>& items) {
     return v;
 }
 
-const JsonValuePtr& requireField(const std::map<std::string, JsonValuePtr>& obj,
-                                 const std::string& key,
-                                 const std::string& context) {
+JsonValuePtr requireField(const std::map<std::string, JsonValuePtr>& obj,
+                         const std::string& key,
+                         const std::string& context) {
     auto it = obj.find(key);
     if (it == obj.end()) {
         throw std::runtime_error("missing field '" + key + "' in " + context);

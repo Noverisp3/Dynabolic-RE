@@ -297,7 +297,28 @@ std::vector<std::string> LogicProcessor::deduceFacts() {
             }
 
             std::string consequent = rule->getProperty("consequent");
-            if (rule->evaluate(fact_map)) {
+            
+            // Bayesian rule firing: Rule only fires if confidence of antecedents exceeds threshold.
+            // If BayesianProcessor is available, we use it to check fact acceptance.
+            bool rule_satisfied = true;
+            
+            if (bayesian_processor_) {
+                for (const auto& ant : rule->getAntecedents()) {
+                    if (!bayesian_processor_->acceptFact(ant, firing_threshold_)) {
+                        rule_satisfied = false;
+                        break;
+                    }
+                }
+            } else {
+                // Fallback to legacy binary facts
+                std::unordered_map<std::string, bool> rule_fact_map;
+                for (const auto& f : facts_) {
+                    rule_fact_map[f.first] = f.second;
+                }
+                rule_satisfied = rule->evaluate(rule_fact_map);
+            }
+
+            if (rule_satisfied) {
                 // Rule is satisfied. Add justification.
                 if (justifications_[consequent].insert(rule->getId()).second) {
                     changed = true;
@@ -306,6 +327,16 @@ std::vector<std::string> LogicProcessor::deduceFacts() {
                 if (facts_.find(consequent) == facts_.end()) {
                     facts_[consequent] = true;
                     new_facts.push_back(consequent);
+                    
+                    // Propagate confidence to BayesianProcessor if possible
+                    if (bayesian_processor_) {
+                        // Simplified: set derived fact prior to max of antecedent priors
+                        double max_conf = 0.0;
+                        for (const auto& ant : rule->getAntecedents()) {
+                            max_conf = std::max(max_conf, bayesian_processor_->getPrior(ant));
+                        }
+                        bayesian_processor_->setPrior(consequent, max_conf);
+                    }
                     changed = true;
                 }
             } else {
@@ -658,6 +689,10 @@ ReasoningEngine::ReasoningEngine(int num_workers)
 
     chain_processor_ = std::make_unique<ChainOfLinks>();
     logic_processor_ = std::make_unique<LogicProcessor>();
+    bayesian_processor_ = std::make_unique<BayesianProcessor>();
+    
+    // Link Bayesian to Logic
+    logic_processor_->setBayesianProcessor(bayesian_processor_.get());
 }
 
 ReasoningEngine::~ReasoningEngine() {

@@ -66,6 +66,9 @@ public:
     std::string serializeChain() const;
 };
 
+// Bayesian Processor - Probabilistic reasoning with conditional probability
+class BayesianProcessor;
+
 // Logic Processor - Pure logical reasoning without matrices
 class LogicProcessor {
 private:
@@ -80,9 +83,24 @@ private:
     // Explicit facts don't need justifications but can be removed.
     std::unordered_set<std::string> explicit_facts_;
 
+    // Bayesian Integration: Reference to BayesianProcessor for confidence-based firing
+    BayesianProcessor* bayesian_processor_ = nullptr;
+    double firing_threshold_ = 0.5;
+
     mutable std::mutex logic_mutex_;
 
 public:
+    LogicProcessor() : bayesian_processor_(nullptr), firing_threshold_(0.5) {}
+    ~LogicProcessor() = default;
+
+    void setBayesianProcessor(BayesianProcessor* bp) { 
+        std::lock_guard<std::mutex> lock(logic_mutex_);
+        bayesian_processor_ = bp; 
+    }
+    void setFiringThreshold(double threshold) {
+        std::lock_guard<std::mutex> lock(logic_mutex_);
+        firing_threshold_ = threshold;
+    }
     void addFact(const std::string& fact, bool value, bool is_explicit = true);
     void removeFact(const std::string& fact);
     void retractFact(const std::string& fact); // Recursive retraction
@@ -180,6 +198,8 @@ private:
 
     std::unique_ptr<ChainOfLinks> chain_processor_;
     std::unique_ptr<LogicProcessor> logic_processor_;
+    // Probability Processor for Bayesian integration
+    std::unique_ptr<BayesianProcessor> bayesian_processor_;
 
     // Threading components
     std::vector<std::thread> worker_threads_;
@@ -260,6 +280,7 @@ public:
 
     // Accessor methods for specialized reasoners
     LogicProcessor* getLogicProcessor() { return logic_processor_.get(); }
+    BayesianProcessor* getBayesianProcessor() { return bayesian_processor_.get(); }
     const std::unordered_map<uint32_t, std::shared_ptr<GraphNode>>& getNodes() const { return nodes_; }
     const std::unordered_map<std::string, uint32_t>& getNameMap() const { return name_to_id_; }
 

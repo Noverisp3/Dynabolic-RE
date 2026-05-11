@@ -16,7 +16,7 @@ void test_graph_node_creation() {
     assert(node->getProperty("key") == "value");
     assert(node->hasProperty("key") == true);
     
-    std::cout << "✓ GraphNode creation test passed" << std::endl;
+    std::cout << "GraphNode creation test passed" << std::endl;
 }
 
 void test_graph_link_creation() {
@@ -33,7 +33,7 @@ void test_graph_link_creation() {
     assert(link->getSource() == node1);
     assert(link->getTarget() == node2);
     
-    std::cout << "✓ GraphLink creation test passed" << std::endl;
+    std::cout << "GraphLink creation test passed" << std::endl;
 }
 
 void test_activation_propagation() {
@@ -53,7 +53,7 @@ void test_activation_propagation() {
     
     assert(node2->getActivation() > 0.0);
     
-    std::cout << "✓ Activation propagation test passed" << std::endl;
+    std::cout << "Activation propagation test passed" << std::endl;
 }
 
 void test_serialization() {
@@ -75,7 +75,7 @@ void test_serialization() {
     assert(new_node->getProperty("key1") == "value1");
     assert(new_node->getProperty("key2") == "value2");
     
-    std::cout << "✓ Serialization test passed" << std::endl;
+    std::cout << "Serialization test passed" << std::endl;
 }
 
 int main() {

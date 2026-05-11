@@ -73,7 +73,33 @@ void testTMS() {
     assert(lp.hasFact("C") == false);
     std::cout << "Step 4: Final retraction OK" << std::endl;
 
-    std::cout << "All TMS tests passed!" << std::endl;
+    // 5. Bayesian-driven rule firing
+    std::cout << "Testing Bayesian-driven rule firing..." << std::endl;
+    BayesianProcessor bp;
+    lp.setBayesianProcessor(&bp);
+    lp.setFiringThreshold(0.7);
+
+    // Rule: E -> F
+    auto rule_ef = std::make_shared<RuleNode>("rule_ef");
+    rule_ef->setAntecedents({"E"});
+    rule_ef->setConsequent("F");
+    rule_ef->setProperty("consequent", "F");
+    lp.addRule(rule_ef);
+
+    // E is true, but low confidence (0.4 < 0.7)
+    bp.setPrior("E", 0.4);
+    lp.deduceFacts();
+    assert(lp.hasFact("F") == false);
+    std::cout << "Bayesian Step 1: Rule didn't fire (confidence 0.4 < threshold 0.7) OK" << std::endl;
+
+    // Increase E confidence (0.8 > 0.7)
+    bp.setPrior("E", 0.8);
+    lp.deduceFacts();
+    assert(lp.hasFact("F") == true);
+    assert(bp.getPrior("F") >= 0.7); // F should have inherited/derived confidence
+    std::cout << "Bayesian Step 2: Rule fired (confidence 0.8 > threshold 0.7) OK" << std::endl;
+
+    std::cout << "All TMS and Bayesian tests passed!" << std::endl;
 }
 
 } // namespace dynabolic
