@@ -30,7 +30,7 @@ class SolverResult:
 
 def _default_binary() -> Path:
     """Default solver path: build/dynabolic_solver under the repo root."""
-    # dynabolic_llm/solver.py -> repo root
+    # dynabolic_re/solver.py -> repo root
     return Path(__file__).resolve().parent.parent / "build" / "dynabolic_solver"
 
 

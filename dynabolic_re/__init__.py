@@ -1,4 +1,4 @@
-"""LLM-symbolic hybrid orchestrator for Dynabolic-LM.
+"""LLM-symbolic hybrid orchestrator for Dynabolic-RE.
 
 Pipeline:
     natural-language question

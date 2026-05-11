@@ -13,7 +13,7 @@ Env vars:
     ANTHROPIC_API_KEY (required for Anthropic)
     ANTHROPIC_MODEL   (default: claude-3-5-haiku-latest)
 
-`from_env()` picks a provider based on `DYNABOLIC_LLM_PROVIDER`
+`from_env()` picks a provider based on `DYNABOLIC_RE_PROVIDER`
 (`ollama` | `openai` | `anthropic` | `mock`). Defaults to `ollama`.
 """
 
@@ -189,9 +189,9 @@ class MockProvider:
 # --- Factory -----------------------------------------------------------------
 
 def from_env() -> LLMProvider:
-    """Pick a provider based on DYNABOLIC_LLM_PROVIDER. Defaults to ollama."""
+    """Pick a provider based on DYNABOLIC_RE_PROVIDER. Defaults to ollama."""
 
-    name = os.environ.get("DYNABOLIC_LLM_PROVIDER", "ollama").lower()
+    name = os.environ.get("DYNABOLIC_RE_PROVIDER", "ollama").lower()
     if name == "ollama":
         return OllamaProvider()
     if name == "openai":
@@ -201,6 +201,6 @@ def from_env() -> LLMProvider:
     if name == "mock":
         return MockProvider(responder=lambda s, u: "")
     raise ProviderError(
-        f"unknown DYNABOLIC_LLM_PROVIDER={name!r}; "
+        f"unknown DYNABOLIC_RE_PROVIDER={name!r}; "
         f"expected one of: ollama, openai, anthropic, mock"
     )

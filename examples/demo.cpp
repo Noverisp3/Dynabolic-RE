@@ -10,7 +10,7 @@ using namespace dynabolic;
 class DynabolicDemo {
 public:
     void run() {
-        std::cout << "Dynabolic-LM: Matrix-Free Graph-Based AI Architecture\n";
+        std::cout << "Dynabolic-RE: Matrix-Free Graph-Based Reasoning Engine\n";
         std::cout << "=====================================================\n\n";
         
         demonstrateGraphReasoning();

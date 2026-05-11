@@ -1,8 +1,8 @@
 // dynabolic_solver — JSON-in / JSON-out forward-chaining solver.
 //
 // Reads a problem description from stdin (single JSON object) and writes a
-// result JSON to stdout. Designed to be the C++ end of a Python orchestrator
-// that talks to an LLM for fact extraction and answer verbalisation. The
+// result JSON to stdout. Designed to be the C++ end of the Dynabolic-RE
+// Python orchestrator that talks to an LLM for fact extraction and answer verbalisation. The
 // solver does prioritised defeasible reasoning with negation-as-failure
 // (closed-world semantics) and records every rule firing in a derivation
 // chain.

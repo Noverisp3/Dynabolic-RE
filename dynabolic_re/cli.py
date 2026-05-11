@@ -1,4 +1,4 @@
-"""`python -m dynabolic_llm "your question"` runner.
+"""`python -m dynabolic_re "your question"` runner.
 
 Picks the provider via DYNABOLIC_LLM_PROVIDER (default: ollama). Prints the
 LLM-extracted problem, the engine's derivation chain, and the verbalised
@@ -23,9 +23,9 @@ def _print_section(title: str, body: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="python -m dynabolic_llm",
+        prog="python -m dynabolic_re",
         description="LLM extracts facts/rules -> dynabolic_solver reasons -> "
-                    "LLM verbalises. Pick provider via DYNABOLIC_LLM_PROVIDER "
+                    "LLM verbalises. Pick provider via DYNABOLIC_RE_PROVIDER "
                     "env var (ollama | openai | anthropic | mock).",
     )
     parser.add_argument("question", help="Natural-language question (with context).")

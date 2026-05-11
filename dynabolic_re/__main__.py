@@ -1,4 +1,4 @@
-"""Module entrypoint so `python -m dynabolic_llm` works."""
+"""Module entrypoint so `python -m dynabolic_re` works."""
 
 import sys
 

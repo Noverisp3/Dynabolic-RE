@@ -1,10 +1,10 @@
-# Dynabolic-LM Documentation
+# Dynabolic-RE Documentation
 
 ## Overview
 
-Dynabolic-LM is a **matrix-free AI architecture** using graph-based reasoning with only the C++ standard library. It eliminates all matrix operations (MatMul) by using native graph structures designed for reasoning tasks.
+Dynabolic-RE is a **matrix-free reasoning engine** using graph-based reasoning with only the C++ standard library. It eliminates all matrix operations (MatMul) by using native graph structures designed for reasoning tasks.
 
-**Key Achievement**: 100% matrix-free AI using only `<vector>`, `<map>`, `<thread>`, `<memory>` - no external dependencies.
+**Key Achievement**: 100% matrix-free reasoning using only `<vector>`, `<map>`, `<thread>`, `<memory>` - no external dependencies.
 
 ## Why Pure C++ Without Matrix Libraries?
 
@@ -66,7 +66,7 @@ Modern AI frameworks (PyTorch, TensorFlow, NumPy) are **100% optimized for matri
 ## Project Structure
 
 ```
-Dynabolic-LM/
+Dynabolic-RE/
 ├── include/                    # Public API headers
 │   ├── graph_node.hpp          # Core graph structures
 │   ├── reasoning_engine.hpp    # Multi-threaded engine
@@ -82,16 +82,16 @@ Dynabolic-LM/
 ├── tools/                      # Standalone CLIs
 │   ├── dynabolic_solver.cpp    # JSON-in/JSON-out forward-chaining solver
 │   └── README.md               # Solver schema + usage
-├── dynabolic_llm/              # Python LLM-orchestrator (stdlib only)
+├── dynabolic_re/               # Python LLM-orchestrator (stdlib only)
 │   ├── provider.py             # Ollama / OpenAI / Anthropic / Mock
 │   ├── extractor.py            # NL -> problem JSON
 │   ├── verbalizer.py           # chain -> NL answer
 │   ├── pipeline.py             # extract -> solve -> verbalise
-│   └── cli.py                  # `python -m dynabolic_llm "..."`
+│   └── cli.py                  # `python -m dynabolic_re "..."`
 ├── tests/                      # Unit tests
 │   ├── test_graph.cpp          # Graph structure tests
 │   ├── test_solver.sh          # Smoke tests for dynabolic_solver
-│   ├── test_dynabolic_llm.py   # Orchestrator tests (use MockProvider)
+│   ├── test_dynabolic_re.py    # Orchestrator tests (use MockProvider)
 │   └── CMakeLists.txt
 ├── CMakeLists.txt              # CMake build (cross-platform)
 ├── Makefile                    # Make build (Linux/Mac)
@@ -152,7 +152,7 @@ engine.activateNodeAsync("node_id", context);
 engine.waitForCompletion();
 ```
 
-## LLM-symbolic hybrid (`dynabolic_llm`)
+## LLM-symbolic hybrid (`dynabolic_re`)
 
 A Python orchestrator that wraps an LLM around the C++ solver:
 
@@ -180,28 +180,28 @@ ollama pull llama3.1:8b
 python3 examples/tweety_penguin.py
 
 # 4. Or ask anything else
-python3 -m dynabolic_llm \
+python3 -m dynabolic_re \
   "All humans are mammals. Mary is human. Is Mary a mammal?"
 ```
 
 Or against OpenAI / Anthropic:
 
 ```bash
-DYNABOLIC_LLM_PROVIDER=openai    OPENAI_API_KEY=...    python3 -m dynabolic_llm "..."
-DYNABOLIC_LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=... python3 -m dynabolic_llm "..."
+DYNABOLIC_RE_PROVIDER=openai    OPENAI_API_KEY=...    python3 -m dynabolic_re "..."
+DYNABOLIC_RE_PROVIDER=anthropic ANTHROPIC_API_KEY=... python3 -m dynabolic_re "..."
 ```
 
 Or offline against a canned mock (no LLM at all — useful for CI / smoke tests):
 
 ```bash
-DYNABOLIC_LLM_PROVIDER=mock python3 examples/tweety_penguin.py
+DYNABOLIC_RE_PROVIDER=mock python3 examples/tweety_penguin.py
 ```
 
 Run the unit tests:
 
 ```bash
 make                              # build solver first
-python3 -m unittest tests/test_dynabolic_llm.py
+python3 -m unittest tests/test_dynabolic_re.py
 ```
 
 ## Applications

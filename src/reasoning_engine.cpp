@@ -334,7 +334,7 @@ double BayesianProcessor::getConditional(const std::string& effect, const std::s
 double BayesianProcessor::inferPosterior(const std::string& cause, const std::string& effect) {
     // Bayes' theorem: P(cause | effect) = P(effect | cause) * P(cause) / P(effect)
     double prior_cause = getPrior(cause);
-    double likelihood = getConditional(effect, cause);
+    double likelihood = getConditional(effect, cause);open PR
 
     // Calculate marginal probability P(effect) = sum over all possible causes
     double marginal_effect = 0.0;

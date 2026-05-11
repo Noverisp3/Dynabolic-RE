@@ -1,4 +1,4 @@
-# Makefile for Dynabolic-LM - Pure C++ Graph-Based AI Architecture
+# Makefile for Dynabolic-RE - Pure C++ Graph-Based Reasoning Engine
 # Organized project structure with separate include, src, and build directories
 
 CXX = g++
@@ -93,7 +93,7 @@ tree:
 
 # Help target
 help:
-	@echo "Dynabolic-LM Makefile"
+	@echo "Dynabolic-RE Makefile"
 	@echo "===================="
 	@echo "Available targets:"
 	@echo "  all         - Build everything (default)"

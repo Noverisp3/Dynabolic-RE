@@ -13,11 +13,11 @@ Usage:
     python3 examples/tweety_penguin.py
 
     # Or against OpenAI / Anthropic:
-    DYNABOLIC_LLM_PROVIDER=openai    OPENAI_API_KEY=...    python3 examples/tweety_penguin.py
-    DYNABOLIC_LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=... python3 examples/tweety_penguin.py
+    DYNABOLIC_RE_PROVIDER=openai    OPENAI_API_KEY=...    python3 examples/tweety_penguin.py
+    DYNABOLIC_RE_PROVIDER=anthropic ANTHROPIC_API_KEY=... python3 examples/tweety_penguin.py
 
     # Or fully offline against the canned mock (no LLM at all):
-    DYNABOLIC_LLM_PROVIDER=mock python3 examples/tweety_penguin.py
+    DYNABOLIC_RE_PROVIDER=mock python3 examples/tweety_penguin.py
 
 The `mock` mode is what the CI / test suite uses; it doesn't actually call
 the LLM but exercises the same pipeline so you can see the engine output
@@ -40,8 +40,8 @@ from pathlib import Path
 # Make the repo root importable when running this file directly.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from dynabolic_llm.pipeline import Pipeline
-from dynabolic_llm.provider import MockProvider, ProviderError, from_env
+from dynabolic_re.pipeline import Pipeline
+from dynabolic_re.provider import MockProvider, ProviderError, from_env
 
 QUESTION = (
     "Penguins are flightless birds. Tweety is a penguin. Can Tweety fly?"
@@ -100,7 +100,7 @@ def _mock_responder(system: str, _user: str) -> str:
 
 
 def _make_pipeline() -> Pipeline:
-    if os.environ.get("DYNABOLIC_LLM_PROVIDER", "ollama").lower() == "mock":
+    if os.environ.get("DYNABOLIC_RE_PROVIDER", "ollama").lower() == "mock":
         return Pipeline(provider=MockProvider(responder=_mock_responder))
     return Pipeline(provider=from_env())
 

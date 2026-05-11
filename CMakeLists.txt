@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(DynabolicLM VERSION 1.0.0 LANGUAGES CXX)
+project(DynabolicRE VERSION 1.0.0 LANGUAGES CXX)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -68,7 +68,7 @@ endif()
 
 # Print configuration summary
 message(STATUS "")
-message(STATUS "Dynabolic-LM Configuration Summary:")
+message(STATUS "Dynabolic-RE Configuration Summary:")
 message(STATUS "  Version: ${PROJECT_VERSION}")
 message(STATUS "  Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "  C++ standard: ${CMAKE_CXX_STANDARD}")

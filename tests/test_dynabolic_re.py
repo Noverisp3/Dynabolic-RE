@@ -1,9 +1,9 @@
-"""Unit tests for the LLM orchestrator.
+"""Unit tests for the LLM-symbolic hybrid orchestrator.
 
 Uses MockProvider so no LLM is required. The C++ solver binary IS required
 and must be built first (`make` from the repo root).
 
-Run: python3 -m unittest tests/test_dynabolic_llm.py
+Run: python3 -m unittest tests/test_dynabolic_re.py
 """
 
 from __future__ import annotations
@@ -17,16 +17,16 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
-from dynabolic_llm.extractor import ExtractionError, extract
-from dynabolic_llm.pipeline import Pipeline
-from dynabolic_llm.provider import (
+from dynabolic_re.extractor import ExtractionError, extract
+from dynabolic_re.pipeline import Pipeline
+from dynabolic_re.provider import (
     AnthropicProvider,
     MockProvider,
     OpenAIProvider,
     ProviderError,
 )
-from dynabolic_llm.solver import SolverError, solve
-from dynabolic_llm.verbalizer import verbalize
+from dynabolic_re.solver import SolverError, solve
+from dynabolic_re.verbalizer import verbalize
 
 
 _SOLVER = _REPO_ROOT / "build" / "dynabolic_solver"

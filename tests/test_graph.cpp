@@ -78,7 +78,7 @@ void test_serialization() {
 }
 
 int main() {
-    std::cout << "Running Dynabolic-LM Tests" << std::endl;
+    std::cout << "Running Dynabolic-RE Tests" << std::endl;
     std::cout << "=============================" << std::endl;
     
     try {

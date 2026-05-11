@@ -2,7 +2,7 @@
 REM Build script for Windows with Visual Studio
 REM Organized project structure with separate include, src, and build directories
 
-echo Building Dynabolic-LM - Pure C++ Graph-Based AI Architecture
+echo Building Dynabolic-RE - Pure C++ Graph-Based Reasoning Engine
 echo ============================================================
 
 REM Check if cl.exe is available

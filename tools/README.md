@@ -1,9 +1,9 @@
-# dynabolic_solver
+# dynabolic_solver for Dynabolic-RE
 
 A JSON-in / JSON-out forward-chaining solver. Wraps `LogicProcessor` +
 `RuleNode` and adds prioritised defeasible reasoning with negation-as-failure
 plus derivation-chain tracking so the output is something a Python
-orchestrator (or LLM) can consume directly.
+orchestrator (or the RE orchestrator) can consume directly.
 
 ## Build
 

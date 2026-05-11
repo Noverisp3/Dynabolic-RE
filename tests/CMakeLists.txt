@@ -1,4 +1,4 @@
-# Test CMakeLists.txt for Dynabolic-LM
+# Test CMakeLists.txt for Dynabolic-RE
 
 # Simple test executable
 add_executable(test_graph test_graph.cpp)
