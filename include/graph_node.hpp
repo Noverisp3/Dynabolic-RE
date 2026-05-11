@@ -234,6 +234,9 @@ public:
     void setAntecedents(const std::vector<std::string>& antecedents);
     void setConsequent(const std::string& consequent);
 
+    const std::vector<std::string>& getAntecedents() const { return antecedents_; }
+    const std::string& getConsequent() const { return consequent_; }
+
     bool evaluate(const std::unordered_map<std::string, bool>& facts) const;
     void activate(const std::unordered_map<std::string, double>& context) override;
 };

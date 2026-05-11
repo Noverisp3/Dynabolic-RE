@@ -1,4 +1,5 @@
 #include "../include/graph_node.hpp"
+#include "test_tms.hpp"
 #include <iostream>
 #include <cassert>
 
@@ -86,6 +87,7 @@ int main() {
         test_graph_link_creation();
         test_activation_propagation();
         test_serialization();
+        testTMS();
         
         std::cout << "\n=============================" << std::endl;
         std::cout << "All tests passed successfully!" << std::endl;

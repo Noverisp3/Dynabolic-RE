@@ -156,13 +156,87 @@ std::string ChainOfLinks::serializeChain() const {
 }
 
 // LogicProcessor Implementation
-void LogicProcessor::addFact(const std::string& fact, bool value) {
+void LogicProcessor::addFact(const std::string& fact, bool value, bool is_explicit) {
     std::lock_guard<std::mutex> lock(logic_mutex_);
     facts_[fact] = value;
+    if (is_explicit) {
+        explicit_facts_.insert(fact);
+    }
 }
 
 void LogicProcessor::removeFact(const std::string& fact) {
     std::lock_guard<std::mutex> lock(logic_mutex_);
+    facts_.erase(fact);
+    explicit_facts_.erase(fact);
+    justifications_.erase(fact);
+    
+    // After removing an explicit fact or a justification, we might need to trigger retraction
+    // This is handled by retractFact or by the next deduceFacts cycle.
+}
+
+void LogicProcessor::retractFact(const std::string& fact) {
+    std::lock_guard<std::mutex> lock(logic_mutex_);
+    
+    if (facts_.find(fact) == facts_.end()) return;
+
+    // 1. Mark the fact as non-explicit (it's being retracted)
+    explicit_facts_.erase(fact);
+    
+    // 2. Clear its justifications (it's being retracted)
+    justifications_.erase(fact);
+
+    // 3. Recursive retraction: find all derived facts that depend on this one
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        
+        std::vector<std::string> to_retract;
+        for (auto& pair : justifications_) {
+            const std::string& derived_fact = pair.first;
+            
+            // If it's already scheduled for retraction or is an explicit fact, skip
+            if (facts_.find(derived_fact) == facts_.end() || explicit_facts_.count(derived_fact) > 0) {
+                continue;
+            }
+
+            // Check if all rules supporting this derived fact are now invalid
+            std::unordered_set<std::string>& rule_ids = pair.second;
+            std::vector<std::string> invalid_rules;
+            
+            for (const std::string& rule_id : rule_ids) {
+                // Find the rule to check its antecedents
+                for (auto& rule : rules_) {
+                    if (rule->getId() == rule_id) {
+                        for (const auto& ant : rule->getAntecedents()) {
+                            if (ant == fact || facts_.find(ant) == facts_.end()) {
+                                invalid_rules.push_back(rule_id);
+                                break;
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+            
+            // Remove invalid justifications
+            for (const auto& rid : invalid_rules) {
+                rule_ids.erase(rid);
+            }
+            
+            // If no justifications left, retract the derived fact
+            if (rule_ids.empty()) {
+                to_retract.push_back(derived_fact);
+            }
+        }
+        
+        for (const auto& f : to_retract) {
+            facts_.erase(f);
+            justifications_.erase(f);
+            changed = true;
+        }
+    }
+    
+    // Finally remove the target fact
     facts_.erase(fact);
 }
 
@@ -194,21 +268,51 @@ void LogicProcessor::removeRule(const std::string& rule_id) {
 }
 
 std::vector<std::string> LogicProcessor::deduceFacts() {
+    std::lock_guard<std::mutex> lock(logic_mutex_);
     std::vector<std::string> new_facts;
+    std::vector<std::string> retracted_facts;
     bool changed = true;
 
     while (changed) {
         changed = false;
+
+        // 1. Retract facts that are no longer supported
+        auto it = facts_.begin();
+        while (it != facts_.end()) {
+            const std::string& fact_name = it->first;
+            if (explicit_facts_.count(fact_name) == 0 && justifications_[fact_name].empty()) {
+                retracted_facts.push_back(fact_name);
+                it = facts_.erase(it);
+                changed = true;
+            } else {
+                ++it;
+            }
+        }
+
+        // 2. Try to derive new facts or refresh justifications
         for (auto& rule : rules_) {
             std::unordered_map<std::string, bool> fact_map;
-            for (const auto& fact : facts_) {
-                fact_map[fact.first] = fact.second;
+            for (const auto& f : facts_) {
+                fact_map[f.first] = f.second;
             }
 
-            if (rule->evaluate(fact_map) && !hasFact(rule->getProperty("consequent"))) {
-                addFact(rule->getProperty("consequent"), true);
-                new_facts.push_back(rule->getProperty("consequent"));
-                changed = true;
+            std::string consequent = rule->getProperty("consequent");
+            if (rule->evaluate(fact_map)) {
+                // Rule is satisfied. Add justification.
+                if (justifications_[consequent].insert(rule->getId()).second) {
+                    changed = true;
+                }
+                
+                if (facts_.find(consequent) == facts_.end()) {
+                    facts_[consequent] = true;
+                    new_facts.push_back(consequent);
+                    changed = true;
+                }
+            } else {
+                // Rule not satisfied. Remove justification if it existed.
+                if (justifications_[consequent].erase(rule->getId()) > 0) {
+                    changed = true;
+                }
             }
         }
     }

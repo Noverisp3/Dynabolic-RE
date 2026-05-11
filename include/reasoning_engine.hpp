@@ -71,11 +71,21 @@ class LogicProcessor {
 private:
     std::unordered_map<std::string, bool> facts_;
     std::vector<std::shared_ptr<RuleNode>> rules_;
+    
+    // TMS: Justification table. Maps a fact to the IDs of rules that support it.
+    // A fact is retracted if it has no more supporting justifications.
+    std::unordered_map<std::string, std::unordered_set<std::string>> justifications_;
+    
+    // Tracks which facts were explicitly added (not deduced).
+    // Explicit facts don't need justifications but can be removed.
+    std::unordered_set<std::string> explicit_facts_;
+
     mutable std::mutex logic_mutex_;
 
 public:
-    void addFact(const std::string& fact, bool value);
+    void addFact(const std::string& fact, bool value, bool is_explicit = true);
     void removeFact(const std::string& fact);
+    void retractFact(const std::string& fact); // Recursive retraction
     bool hasFact(const std::string& fact) const;
     bool getFact(const std::string& fact) const;
 
