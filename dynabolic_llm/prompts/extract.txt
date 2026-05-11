@@ -14,8 +14,9 @@ this schema, with no surrounding markdown, no commentary, no code fences):
     "rules": [
       {
         "name":        "<short rule id>",
-        "antecedents": ["<predicate>", ...],
-        "consequent":  "<predicate>"
+        "antecedents": [{"name": "<predicate>", "value": <bool>}, ...],
+        "consequent":  {"name": "<predicate>", "value": <bool>},
+        "priority":    <int>          // optional, default 0
       }
     ],
     "goal": "<predicate>"
@@ -24,56 +25,72 @@ this schema, with no surrounding markdown, no commentary, no code fences):
 How to tell facts and rules apart (CRITICAL):
 
 - A FACT is a claim about a specific named individual mentioned in the text.
-  "Mary is human" -> fact mary_is_human=true.
+  "Mary is human"      -> fact mary_is_human=true.
   "Tweety is a penguin" -> fact tweety_is_penguin=true.
 
 - A RULE is a UNIVERSAL claim about a CATEGORY of things, of the form
   "all X are Y", "every X is Y", "X are Y", "X are always Y", "if X then Y".
   These are NEVER facts. You MUST express them as rules.
-    "All humans are mammals"     -> rule  is_human -> is_mammal
-    "Penguins are birds"         -> rule  is_penguin -> is_bird
-    "Penguins are flightless"    -> rule  is_penguin -> cannot_fly
-    "Birds that are not penguins can fly" -> beyond V1; skip or simplify
+    "All humans are mammals"  -> rule  is_human -> is_mammal
+    "Penguins are birds"      -> rule  is_penguin -> is_bird
   Do NOT turn a universal into a single fact like
   "penguins_are_flightless=true". That is wrong. It must be a rule.
 
 - After extracting universal rules, GROUND them to the named individual.
-  If the text says "Tweety is a penguin" and "Penguins are flightless", you
-  MUST emit two rules with the individual baked in:
+  If the text says "Tweety is a penguin" and "Penguins are birds", emit a
+  rule with the individual baked in:
     rule  tweety_is_penguin -> tweety_is_bird
-    rule  tweety_is_penguin -> tweety_cannot_fly
-  This way the engine can chain from the FACT (tweety_is_penguin=true) to
-  the conclusion. Without grounding, no rule can fire.
+  Without grounding, no rule can fire.
+
+Negation and exceptions (V2):
+
+- The engine now supports NEGATIVE consequents and rule PRIORITIES, so you
+  no longer need the positive-predicate workaround. To express "X cannot Y",
+  emit a rule whose consequent has value=false. To express an EXCEPTION to
+  a default rule, give the exception a HIGHER priority than the default.
+
+  Example: "Birds fly. Penguins don't fly. Tweety is a penguin."
+    default:  tweety_is_bird=true     -> tweety_can_fly=true   (priority 0)
+    exception: tweety_is_penguin=true -> tweety_can_fly=false  (priority 10)
+  Both rules fire conceptually; the higher-priority exception wins.
+
+- The engine also supports negation-as-failure in antecedents. An
+  antecedent {"name": "X", "value": false} fires when X is NOT known to
+  be true (it has not been asserted as a fact and no rule has derived it).
+  Use this when a rule should fire UNLESS some condition holds.
 
 Hard constraints:
 - Predicate names must be lowercase snake_case English (e.g.
-  "tweety_is_penguin", "can_fly", "needs_to_surface_for_air"). No spaces,
-  no quotes, no special characters.
-- Antecedents and consequents are POSITIVE only. There is no negation.
-  To express a negative claim ("X cannot fly"), use a positive predicate
-  like "x_cannot_fly" rather than negating "x_can_fly".
-- Rules are conjunctive: the consequent fires only if every antecedent is
-  true. There is no OR.
-- Each rule's consequent is treated as `value: true` once the rule fires.
-- The "goal" must be a single predicate string. Pick the predicate the
-  user is asking about. "Can Tweety fly?" -> goal "tweety_can_fly".
-  "Is Mary warm-blooded?" -> goal "mary_is_warm_blooded".
+  "tweety_is_penguin", "can_fly"). No spaces, no quotes, no special chars.
+- Antecedents and consequents are now ALWAYS {name, value} objects. The
+  value must be true or false. Plain strings are accepted but discouraged
+  for new extractions.
+- Rules are conjunctive: every antecedent must be satisfied for the
+  consequent to fire. There is no OR.
+- "priority" is optional, defaults to 0. Use higher numbers (e.g. 10, 100)
+  for stronger / more specific rules that should win over defaults.
+- The "goal" is a single predicate string (the predicate the user is asking
+  about). "Can Tweety fly?" -> goal "tweety_can_fly".
 - Use the same predicate name consistently across facts, rules, and goal.
-  If you write `tweety_is_penguin` in a fact, never spell it `is_penguin`
-  or `tweety_penguin` elsewhere.
 - Output VALID JSON. No trailing commas. No comments.
 - Output ONLY the JSON. No preamble, no postamble, no explanation.
 
-Example 1 (multi-step chain):
+Example 1 (multi-step chain — no negation or priorities):
   Input:  Mary is human. All humans are mammals. All mammals are warm-blooded.
           Is Mary warm-blooded?
-  Output: {"facts":[{"name":"mary_is_human","value":true}],"rules":[{"name":"r1","antecedents":["mary_is_human"],"consequent":"mary_is_mammal"},{"name":"r2","antecedents":["mary_is_mammal"],"consequent":"mary_is_warm_blooded"}],"goal":"mary_is_warm_blooded"}
+  Output: {"facts":[{"name":"mary_is_human","value":true}],"rules":[{"name":"r1","antecedents":[{"name":"mary_is_human","value":true}],"consequent":{"name":"mary_is_mammal","value":true}},{"name":"r2","antecedents":[{"name":"mary_is_mammal","value":true}],"consequent":{"name":"mary_is_warm_blooded","value":true}}],"goal":"mary_is_warm_blooded"}
 
-Example 2 (the positive-predicate trick for a negative claim):
-  Input:  Penguins are flightless birds. Tweety is a penguin. Can Tweety fly?
-  Output: {"facts":[{"name":"tweety_is_penguin","value":true}],"rules":[{"name":"r1","antecedents":["tweety_is_penguin"],"consequent":"tweety_is_bird"},{"name":"r2","antecedents":["tweety_is_penguin"],"consequent":"tweety_cannot_fly"}],"goal":"tweety_can_fly"}
+Example 2 (canonical Tweety with PRIORITY-RESOLVED exception):
+  Input:  Birds fly. Penguins do not fly. Tweety is a penguin and a bird.
+          Can Tweety fly?
+  Output: {"facts":[{"name":"tweety_is_bird","value":true},{"name":"tweety_is_penguin","value":true}],"rules":[{"name":"default_birds_fly","antecedents":[{"name":"tweety_is_bird","value":true}],"consequent":{"name":"tweety_can_fly","value":true},"priority":0},{"name":"penguins_dont_fly","antecedents":[{"name":"tweety_is_penguin","value":true}],"consequent":{"name":"tweety_can_fly","value":false},"priority":10}],"goal":"tweety_can_fly"}
 
-Example 3 (conjunctive rule):
+Example 3 (NAF: "unless" wording becomes a negative antecedent):
+  Input:  A package is delivered unless it is lost. Package 42 has been
+          shipped. Was package 42 delivered?
+  Output: {"facts":[{"name":"pkg42_shipped","value":true}],"rules":[{"name":"deliver_default","antecedents":[{"name":"pkg42_shipped","value":true},{"name":"pkg42_lost","value":false}],"consequent":{"name":"pkg42_delivered","value":true}}],"goal":"pkg42_delivered"}
+
+Example 4 (conjunctive rule):
   Input:  Bob is a student. Bob has paid tuition. A student who has paid
           tuition is enrolled. Is Bob enrolled?
-  Output: {"facts":[{"name":"bob_is_student","value":true},{"name":"bob_has_paid_tuition","value":true}],"rules":[{"name":"r1","antecedents":["bob_is_student","bob_has_paid_tuition"],"consequent":"bob_is_enrolled"}],"goal":"bob_is_enrolled"}
+  Output: {"facts":[{"name":"bob_is_student","value":true},{"name":"bob_has_paid_tuition","value":true}],"rules":[{"name":"r1","antecedents":[{"name":"bob_is_student","value":true},{"name":"bob_has_paid_tuition","value":true}],"consequent":{"name":"bob_is_enrolled","value":true}}],"goal":"bob_is_enrolled"}

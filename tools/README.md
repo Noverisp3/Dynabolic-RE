@@ -1,8 +1,9 @@
 # dynabolic_solver
 
 A JSON-in / JSON-out forward-chaining solver. Wraps `LogicProcessor` +
-`RuleNode` and adds derivation-chain tracking so the output is something a
-Python orchestrator (or LLM) can consume directly.
+`RuleNode` and adds prioritised defeasible reasoning with negation-as-failure
+plus derivation-chain tracking so the output is something a Python
+orchestrator (or LLM) can consume directly.
 
 ## Build
 
@@ -17,36 +18,69 @@ make tools           # builds build/dynabolic_solver
 ./build/dynabolic_solver < problem.json > result.json
 ```
 
-Reads a single JSON object from stdin, writes a single JSON object to stdout,
-status messages (none today) to stderr. Exit code `0` on success, `1` on
-input or solver error.
+Reads a single JSON object from stdin, writes a single JSON object to stdout.
+Exit code `0` on success, `1` on input or solver error.
 
-## Input schema
+## Input schema (V2)
 
 ```json
 {
   "facts": [
-    {"name": "is_bird", "value": true},
-    {"name": "has_wings", "value": true}
+    {"name": "is_bird",    "value": true},
+    {"name": "is_penguin", "value": true}
   ],
   "rules": [
     {
-      "name": "r1",
-      "antecedents": ["is_bird", "has_wings"],
-      "consequent": "can_fly",
-      "weight": 1.0
+      "name":        "default_birds_fly",
+      "antecedents": [{"name": "is_bird", "value": true}],
+      "consequent":  {"name": "can_fly", "value": true},
+      "priority":    0
+    },
+    {
+      "name":        "penguins_dont_fly",
+      "antecedents": [{"name": "is_penguin", "value": true}],
+      "consequent":  {"name": "can_fly", "value": false},
+      "priority":    10
     }
   ],
   "goal": "can_fly"
 }
 ```
 
-- `facts[]` — initial facts. `value` is required and must be a bool.
-- `rules[]` — forward-chaining rules. Antecedents are conjunctive (all must be
-  true for the rule to fire). `weight` is optional and stored on the rule but
-  does not currently affect firing semantics.
-- `goal` — optional. If present, the result reports whether the goal was
-  derived and, if so, its boolean value.
+### Antecedents
+
+Each antecedent is one of:
+
+- A string (V1, back-compat): `"is_bird"` is shorthand for
+  `{"name":"is_bird","value":true}`.
+- A `{name, value}` object (V2): explicit name and required value.
+
+An antecedent with `value: false` is **negation-as-failure (NAF)** under
+closed-world semantics: it is satisfied iff `name` is *not* known to be
+true. "Not known to be true" means the predicate is absent from the fact
+set OR present with `value: false`.
+
+### Consequents
+
+Each consequent is one of:
+
+- A string (V1, back-compat): `"can_fly"` is shorthand for
+  `{"name":"can_fly","value":true}`.
+- A `{name, value}` object (V2): can now set a predicate to `false`.
+
+### Priority
+
+`priority` (int, default `0`) controls conflict resolution. When two rules
+want to set the same predicate to different values, the rule with the
+strictly higher priority wins. Equal priority with disagreement is a tie:
+neither rule fires for that predicate; the tie is recorded under
+`tie_skipped`.
+
+### Goal
+
+`goal` is an optional predicate name. If present, the result reports
+`derived` (whether the goal predicate is in `final_facts`) and `goal_value`
+(its boolean value).
 
 ## Output schema
 
@@ -56,28 +90,45 @@ Success:
 {
   "ok":          true,
   "derived":     true,
-  "goal_value":  true,
+  "goal_value":  false,
   "chain": [
     {
-      "step":          1,
-      "rule":          "r1",
-      "fired_because": ["is_bird", "has_wings"],
-      "concluded":     "can_fly",
-      "value":         true
+      "step":               1,
+      "rule":               "penguins_dont_fly",
+      "fired_because":      ["is_penguin=true"],
+      "concluded":          "can_fly",
+      "value":              false,
+      "priority":           10,
+      "overrides_previous": true
     }
   ],
+  "tie_skipped": [
+    {"predicate": "x", "priority": 5,
+     "rules": [{"name": "r1", "value": true},
+               {"name": "r2", "value": false}]}
+  ],
   "final_facts": {
-    "is_bird":   true,
-    "has_wings": true,
-    "can_fly":   true
-  }
+    "is_bird":    true,
+    "is_penguin": true,
+    "can_fly":    false
+  },
+  "oscillated":  false
 }
 ```
 
-`derived` and `goal_value` are only present if the input had a `goal` field.
-`chain` lists rule firings in the order they fired during the fixed-point
-loop, so a downstream verbaliser can render them as a step-by-step
-explanation.
+- `chain` is the ordered list of rule firings. Each entry's
+  `fired_because` is the literal antecedent list in the form
+  `"name=true"` or `"name=false"`. `priority` mirrors the rule's priority.
+  `overrides_previous: true` is set when this rule's consequent flipped a
+  previously-derived value (only on the first such occurrence per
+  consequent).
+- `tie_skipped` (omitted when empty) lists `{predicate, priority, rules[]}`
+  entries for equal-priority disagreements that could not be resolved.
+- `final_facts` is the post-reasoning state.
+- `oscillated: true` is set if the fixed-point loop hit the iteration cap
+  (1024). This indicates a non-monotonic NAF interaction with no stable
+  model; the chain is still returned but may be incomplete.
+- `derived` / `goal_value` are only present when `goal` was supplied.
 
 Error:
 
@@ -85,20 +136,27 @@ Error:
 { "ok": false, "error": "..." }
 ```
 
-## V1 limitations
+## V1 back-compat
 
-- Antecedents are positive only — no negation. `"!is_bird"` is treated as the
-  literal predicate name, not a negated antecedent.
-- Rules conclude with `value: true` only.
-- Each rule fires at most once per solve.
-- The bundled `JsonParser` does not escape special characters on serialise,
-  so callers should keep predicate names plain (alphanumeric + underscores).
-  This is fine for LLM-extracted predicates but may bite if you hand-craft
-  payloads with quotes or backslashes.
+V1 payloads (string antecedents, string consequents, no `priority`) continue
+to work unchanged — they are interpreted as `{name, value:true}` for both
+antecedent and consequent, with `priority = 0`. The PR-6 test suite still
+passes against the V2 binary.
+
+## V2 limitations
+
+- Each rule fires at most once and is recorded once in `chain`. Suppressed
+  losing rules (e.g. the default in Tweety) are not in the chain. If you
+  want to see *all* satisfied rules including the losers, that's a future
+  extension.
+- NAF is closed-world only. There's no third "unknown" value distinct from
+  `false`.
+- Predicate names should stay alphanumeric + underscores. The bundled
+  `JsonParser` does not escape special characters on serialise.
 
 ## Examples
 
-Three-hop chain:
+Three-hop chain (V1 syntax, still works):
 
 ```bash
 echo '{
@@ -117,6 +175,29 @@ echo '{
 ```
 
 Returns a `chain` of three steps, `derived: true`, `goal_value: true`.
+
+Classical Tweety (V2 syntax, priority-resolved exception):
+
+```bash
+echo '{
+  "facts": [{"name": "is_bird", "value": true},
+            {"name": "is_penguin", "value": true}],
+  "rules": [
+    {"name": "default_birds_fly",
+     "antecedents": [{"name": "is_bird", "value": true}],
+     "consequent":  {"name": "can_fly", "value": true},
+     "priority":    0},
+    {"name": "penguins_dont_fly",
+     "antecedents": [{"name": "is_penguin", "value": true}],
+     "consequent":  {"name": "can_fly", "value": false},
+     "priority":    10}
+  ],
+  "goal": "can_fly"
+}' | ./build/dynabolic_solver
+```
+
+Returns `chain` with one firing (`penguins_dont_fly` at priority 10),
+`final_facts.can_fly = false`, `goal_value: false`.
 
 ## Why a separate tool
 
