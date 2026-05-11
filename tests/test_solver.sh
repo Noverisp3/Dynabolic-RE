@@ -80,6 +80,114 @@ run_case "empty stdin yields error" \
 '' \
 '"error":"empty input.*"ok":false'
 
+# ---------------------------------------------------------------------------
+# V2 schema: negation-as-failure + rule priorities + value=false consequents.
+# ---------------------------------------------------------------------------
+
+# Canonical Tweety: birds fly UNLESS penguin. Both rules have satisfied
+# antecedents; the higher-priority "penguins_dont_fly" wins on can_fly.
+run_case "v2: classical Tweety — priority resolves conflict" \
+'{"facts": [{"name": "is_bird", "value": true}, {"name": "is_penguin", "value": true}],
+  "rules": [
+    {"name": "default_birds_fly",
+     "antecedents": [{"name": "is_bird", "value": true}],
+     "consequent":  {"name": "can_fly", "value": true},
+     "priority":    0},
+    {"name": "penguins_dont_fly",
+     "antecedents": [{"name": "is_penguin", "value": true}],
+     "consequent":  {"name": "can_fly", "value": false},
+     "priority":    10}
+  ],
+  "goal": "can_fly"}' \
+'"derived":true.*"final_facts":\{"can_fly":false.*"goal_value":false'
+
+# Default fires when the exception doesn't apply.
+run_case "v2: default fires when exception absent" \
+'{"facts": [{"name": "is_bird", "value": true}],
+  "rules": [
+    {"name": "default_birds_fly",
+     "antecedents": [{"name": "is_bird", "value": true}],
+     "consequent":  {"name": "can_fly", "value": true},
+     "priority":    0},
+    {"name": "penguins_dont_fly",
+     "antecedents": [{"name": "is_penguin", "value": true}],
+     "consequent":  {"name": "can_fly", "value": false},
+     "priority":    10}
+  ],
+  "goal": "can_fly"}' \
+'"derived":true.*"final_facts":\{"can_fly":true.*"goal_value":true'
+
+# NAF antecedent: "birds fly if NOT known to be penguin". Without is_penguin
+# in facts, NAF on is_penguin succeeds and the rule fires.
+run_case "v2: NAF antecedent fires when target not asserted" \
+'{"facts": [{"name": "is_bird", "value": true}],
+  "rules": [{"name": "naf_default",
+             "antecedents": [{"name": "is_bird",    "value": true},
+                             {"name": "is_penguin", "value": false}],
+             "consequent":  {"name": "can_fly", "value": true}}],
+  "goal": "can_fly"}' \
+'"derived":true.*"goal_value":true'
+
+# Same NAF rule, but is_penguin=true now → NAF antecedent fails → rule
+# doesn't fire → goal not derived.
+run_case "v2: NAF antecedent blocks when target asserted" \
+'{"facts": [{"name": "is_bird", "value": true}, {"name": "is_penguin", "value": true}],
+  "rules": [{"name": "naf_default",
+             "antecedents": [{"name": "is_bird",    "value": true},
+                             {"name": "is_penguin", "value": false}],
+             "consequent":  {"name": "can_fly", "value": true}}],
+  "goal": "can_fly"}' \
+'"chain":\[\].*"derived":false'
+
+# Two rules at equal priority disagree on the same predicate → tie_skipped
+# recorded, fact NOT in final_facts.
+run_case "v2: equal-priority disagreement is tie-skipped" \
+'{"facts": [{"name": "p", "value": true}, {"name": "q", "value": true}],
+  "rules": [
+    {"name": "r_true",
+     "antecedents": [{"name": "p", "value": true}],
+     "consequent":  {"name": "x", "value": true},
+     "priority":    5},
+    {"name": "r_false",
+     "antecedents": [{"name": "q", "value": true}],
+     "consequent":  {"name": "x", "value": false},
+     "priority":    5}
+  ],
+  "goal": "x"}' \
+'"derived":false.*"tie_skipped":\[\{"predicate":"x","priority":5'
+
+# Higher-priority rule overrides earlier lower-priority firing in the
+# SAME chain — the chain records both, the second carries overrides_previous.
+# This happens when the higher rule's antecedent gets derived by an
+# intermediate step.
+run_case "v2: higher priority overrides earlier firing" \
+'{"facts": [{"name": "a", "value": true}],
+  "rules": [
+    {"name": "low",
+     "antecedents": [{"name": "a", "value": true}],
+     "consequent":  {"name": "x", "value": true},
+     "priority":    0},
+    {"name": "derive_b",
+     "antecedents": [{"name": "a", "value": true}],
+     "consequent":  {"name": "b", "value": true},
+     "priority":    0},
+    {"name": "high",
+     "antecedents": [{"name": "b", "value": true}],
+     "consequent":  {"name": "x", "value": false},
+     "priority":    10}
+  ],
+  "goal": "x"}' \
+'"overrides_previous":true.*"final_facts":\{[^}]*"x":false'
+
+# value:false in consequent works for a single rule (no conflict).
+run_case "v2: rule can set value=false directly" \
+'{"facts": [{"name": "is_penguin", "value": true}],
+  "rules": [{"name": "r1",
+             "antecedents": [{"name": "is_penguin", "value": true}],
+             "consequent":  {"name": "can_fly", "value": false}}],
+  "goal": "can_fly"}' \
+'"derived":true.*"final_facts":\{"can_fly":false.*"goal_value":false'
+
 echo
 echo "Results: $pass passed, $fail failed"
 [[ "$fail" -eq 0 ]]

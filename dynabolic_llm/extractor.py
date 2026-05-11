@@ -71,12 +71,51 @@ def _validate(problem: Any) -> dict[str, Any]:
                 raise ExtractionError(f"rules[{i}] missing '{key}'")
         if not isinstance(r["name"], str) or not r["name"]:
             raise ExtractionError(f"rules[{i}].name must be a non-empty string")
-        if not isinstance(r["antecedents"], list) or not all(
-            isinstance(a, str) and a for a in r["antecedents"]
-        ):
-            raise ExtractionError(f"rules[{i}].antecedents must be a list of non-empty strings")
-        if not isinstance(r["consequent"], str) or not r["consequent"]:
-            raise ExtractionError(f"rules[{i}].consequent must be a non-empty string")
+        if not isinstance(r["antecedents"], list):
+            raise ExtractionError(f"rules[{i}].antecedents must be a list")
+        for j, a in enumerate(r["antecedents"]):
+            # Accept V1 string OR V2 {name, value} object.
+            if isinstance(a, str):
+                if not a:
+                    raise ExtractionError(
+                        f"rules[{i}].antecedents[{j}] must be a non-empty string"
+                    )
+            elif isinstance(a, dict):
+                if "name" not in a or "value" not in a:
+                    raise ExtractionError(
+                        f"rules[{i}].antecedents[{j}] must be {{name, value}}"
+                    )
+                if not isinstance(a["name"], str) or not a["name"]:
+                    raise ExtractionError(
+                        f"rules[{i}].antecedents[{j}].name must be a non-empty string"
+                    )
+                if not isinstance(a["value"], bool):
+                    raise ExtractionError(
+                        f"rules[{i}].antecedents[{j}].value must be a bool"
+                    )
+            else:
+                raise ExtractionError(
+                    f"rules[{i}].antecedents[{j}] must be a string or {{name, value}}"
+                )
+        # Consequent: V1 string OR V2 {name, value} object.
+        c = r["consequent"]
+        if isinstance(c, str):
+            if not c:
+                raise ExtractionError(f"rules[{i}].consequent must be non-empty")
+        elif isinstance(c, dict):
+            if "name" not in c or "value" not in c:
+                raise ExtractionError(f"rules[{i}].consequent must be {{name, value}}")
+            if not isinstance(c["name"], str) or not c["name"]:
+                raise ExtractionError(f"rules[{i}].consequent.name must be a non-empty string")
+            if not isinstance(c["value"], bool):
+                raise ExtractionError(f"rules[{i}].consequent.value must be a bool")
+        else:
+            raise ExtractionError(
+                f"rules[{i}].consequent must be a string or {{name, value}}"
+            )
+        # Priority is optional; if present must be an int.
+        if "priority" in r and not isinstance(r["priority"], int):
+            raise ExtractionError(f"rules[{i}].priority must be an int if present")
 
     if "goal" in problem and not isinstance(problem["goal"], str):
         raise ExtractionError("'goal' must be a string if present")

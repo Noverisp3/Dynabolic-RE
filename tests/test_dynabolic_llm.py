@@ -192,6 +192,136 @@ class TestVerbalizer(unittest.TestCase):
         self.assertEqual(payload["chain"][0]["concluded"], "b")
 
 
+class TestV2Schema(unittest.TestCase):
+    """V2 features: NAF antecedents, value=false consequents, priorities."""
+
+    def setUp(self) -> None:
+        _require_solver()
+
+    def test_classical_tweety_priority_wins(self) -> None:
+        problem = {
+            "facts": [
+                {"name": "is_bird", "value": True},
+                {"name": "is_penguin", "value": True},
+            ],
+            "rules": [
+                {"name": "default_birds_fly",
+                 "antecedents": [{"name": "is_bird", "value": True}],
+                 "consequent":  {"name": "can_fly", "value": True},
+                 "priority":    0},
+                {"name": "penguins_dont_fly",
+                 "antecedents": [{"name": "is_penguin", "value": True}],
+                 "consequent":  {"name": "can_fly", "value": False},
+                 "priority":    10},
+            ],
+            "goal": "can_fly",
+        }
+        result = solve(problem)
+        self.assertTrue(result.derived)
+        self.assertFalse(result.goal_value)
+        self.assertFalse(result.final_facts["can_fly"])
+        # Only the winning rule should be in the chain.
+        rule_names = [s["rule"] for s in result.chain]
+        self.assertEqual(rule_names, ["penguins_dont_fly"])
+        self.assertEqual(result.chain[0]["priority"], 10)
+
+    def test_default_fires_when_exception_absent(self) -> None:
+        problem = {
+            "facts": [{"name": "is_bird", "value": True}],
+            "rules": [
+                {"name": "default_birds_fly",
+                 "antecedents": [{"name": "is_bird", "value": True}],
+                 "consequent":  {"name": "can_fly", "value": True},
+                 "priority":    0},
+                {"name": "penguins_dont_fly",
+                 "antecedents": [{"name": "is_penguin", "value": True}],
+                 "consequent":  {"name": "can_fly", "value": False},
+                 "priority":    10},
+            ],
+            "goal": "can_fly",
+        }
+        result = solve(problem)
+        self.assertTrue(result.goal_value)
+
+    def test_naf_antecedent_fires_when_target_unknown(self) -> None:
+        problem = {
+            "facts": [{"name": "is_bird", "value": True}],
+            "rules": [{"name": "naf_default",
+                       "antecedents": [{"name": "is_bird",    "value": True},
+                                       {"name": "is_penguin", "value": False}],
+                       "consequent":  {"name": "can_fly", "value": True}}],
+            "goal": "can_fly",
+        }
+        result = solve(problem)
+        self.assertTrue(result.goal_value)
+
+    def test_naf_antecedent_blocks_when_target_asserted(self) -> None:
+        problem = {
+            "facts": [{"name": "is_bird", "value": True},
+                      {"name": "is_penguin", "value": True}],
+            "rules": [{"name": "naf_default",
+                       "antecedents": [{"name": "is_bird",    "value": True},
+                                       {"name": "is_penguin", "value": False}],
+                       "consequent":  {"name": "can_fly", "value": True}}],
+            "goal": "can_fly",
+        }
+        result = solve(problem)
+        self.assertFalse(result.derived)
+        self.assertEqual(result.chain, [])
+
+    def test_equal_priority_disagreement_is_tie_skipped(self) -> None:
+        problem = {
+            "facts": [{"name": "p", "value": True}, {"name": "q", "value": True}],
+            "rules": [
+                {"name": "r_true",
+                 "antecedents": [{"name": "p", "value": True}],
+                 "consequent":  {"name": "x", "value": True},
+                 "priority":    5},
+                {"name": "r_false",
+                 "antecedents": [{"name": "q", "value": True}],
+                 "consequent":  {"name": "x", "value": False},
+                 "priority":    5},
+            ],
+            "goal": "x",
+        }
+        result = solve(problem)
+        self.assertFalse(result.derived)
+        ties = result.raw.get("tie_skipped", [])
+        self.assertEqual(len(ties), 1)
+        self.assertEqual(ties[0]["predicate"], "x")
+        self.assertEqual(ties[0]["priority"], 5)
+        rule_names = sorted(r["name"] for r in ties[0]["rules"])
+        self.assertEqual(rule_names, ["r_false", "r_true"])
+
+    def test_override_in_chain(self) -> None:
+        # `low` fires first (derives x=true), then `derive_b` derives `b`,
+        # then `high` (priority 10) overrides x to false.
+        problem = {
+            "facts": [{"name": "a", "value": True}],
+            "rules": [
+                {"name": "low",
+                 "antecedents": [{"name": "a", "value": True}],
+                 "consequent":  {"name": "x", "value": True},
+                 "priority":    0},
+                {"name": "derive_b",
+                 "antecedents": [{"name": "a", "value": True}],
+                 "consequent":  {"name": "b", "value": True},
+                 "priority":    0},
+                {"name": "high",
+                 "antecedents": [{"name": "b", "value": True}],
+                 "consequent":  {"name": "x", "value": False},
+                 "priority":    10},
+            ],
+            "goal": "x",
+        }
+        result = solve(problem)
+        self.assertTrue(result.derived)
+        self.assertFalse(result.goal_value)
+        # `high` step should carry overrides_previous=True.
+        high_step = next(s for s in result.chain if s["rule"] == "high")
+        self.assertTrue(high_step.get("overrides_previous", False))
+
+
 class TestPipelineEndToEnd(unittest.TestCase):
     def setUp(self) -> None:
         _require_solver()

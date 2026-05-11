@@ -23,12 +23,12 @@ The `mock` mode is what the CI / test suite uses; it doesn't actually call
 the LLM but exercises the same pipeline so you can see the engine output
 without needing Ollama set up.
 
-V1 note: the canonical "birds fly, penguins are birds, penguins don't fly"
-formulation is non-monotonic and the V1 solver doesn't support negation or
-rule priorities. We sidestep this by extracting "penguins cannot fly" as a
-single positive predicate (`tweety_cannot_fly`) rather than negating
-`tweety_can_fly`. The end-user-facing answer is the same; only the
-intermediate predicates differ.
+V2 update: the solver now supports priorities and value:false consequents,
+so we can model this case canonically without the "positive-predicate trick":
+- default rule: `is_bird -> can_fly=true` (priority 0)
+- exception:   `is_penguin -> can_fly=false` (priority 10)
+Both rules fire conceptually but the higher-priority exception wins; final
+`can_fly=false`.
 """
 
 from __future__ import annotations
@@ -48,23 +48,45 @@ QUESTION = (
 )
 
 # Canned extractor + verbaliser responses for offline (mock) runs.
+# Uses the V2 schema: priorities + value:false consequents so the canonical
+# "birds fly EXCEPT penguins" exception is modelled directly.
 _MOCK_EXTRACTION = (
-    '{"facts":[{"name":"tweety_is_penguin","value":true}],'
+    '{"facts":['
+    '{"name":"tweety_is_penguin","value":true},'
+    '{"name":"tweety_is_bird","value":true}'
+    '],'
     '"rules":['
-    '{"name":"r1","antecedents":["tweety_is_penguin"],'
-    '"consequent":"tweety_is_bird"},'
-    '{"name":"r2","antecedents":["tweety_is_penguin"],'
-    '"consequent":"tweety_cannot_fly"}'
+    '{"name":"default_birds_fly",'
+    '"antecedents":[{"name":"tweety_is_bird","value":true}],'
+    '"consequent":{"name":"tweety_can_fly","value":true},'
+    '"priority":0},'
+    '{"name":"penguins_dont_fly",'
+    '"antecedents":[{"name":"tweety_is_penguin","value":true}],'
+    '"consequent":{"name":"tweety_can_fly","value":false},'
+    '"priority":10}'
     '],'
     '"goal":"tweety_can_fly"}'
 )
 
 _MOCK_VERBALIZATION = (
     "Answer: No, Tweety cannot fly. "
-    "Reasoning: Tweety is a penguin (given), and from the rule that penguins "
-    "are flightless, Tweety cannot fly. The goal `tweety_can_fly` was not "
-    "derived by any rule, so we cannot conclude that Tweety can fly."
+    "Reasoning: Tweety is a penguin (given), and the engine's higher-priority "
+    "rule \"penguins do not fly\" concluded directly that Tweety cannot fly. "
+    "The competing default \"birds fly\" was overruled by this exception."
 )
+
+
+def _fmt_antecedent(a) -> str:
+    """V1 string or V2 {name, value} -> readable form."""
+    if isinstance(a, str):
+        return a
+    return f"{a['name']}={'true' if a['value'] else 'false'}"
+
+
+def _fmt_consequent(c) -> str:
+    if isinstance(c, str):
+        return c
+    return f"{c['name']}={'true' if c['value'] else 'false'}"
 
 
 def _mock_responder(system: str, _user: str) -> str:
@@ -106,8 +128,10 @@ def main() -> int:
         print(f"  - {f['name']} = {f['value']}")
     print(f"Rules ({len(rules)}):")
     for r in rules:
-        ants = " AND ".join(r["antecedents"])
-        print(f"  - {r['name']}: {ants} -> {r['consequent']}")
+        ants = " AND ".join(_fmt_antecedent(a) for a in r["antecedents"])
+        cons = _fmt_consequent(r["consequent"])
+        priority = r.get("priority", 0)
+        print(f"  - {r['name']} (priority {priority}): {ants} -> {cons}")
     print(f"Goal: {goal}")
 
     print("\n--- Engine derivation ---")
@@ -115,9 +139,18 @@ def main() -> int:
         print("(no rules fired)")
     for step in result.chain:
         ants = ", ".join(step["fired_because"])
-        print(f"  step {step['step']}: rule {step['rule']} fired "
-              f"because [{ants}] -> {step['concluded']}={step['value']}")
+        marker = " [OVERRIDES]" if step.get("overrides_previous") else ""
+        print(f"  step {step['step']}: rule {step['rule']} (priority "
+              f"{step.get('priority', 0)}) fired because [{ants}] -> "
+              f"{step['concluded']}={step['value']}{marker}")
+    if result.solver.raw.get("tie_skipped"):
+        print("  Tie-skipped predicates:")
+        for tie in result.solver.raw["tie_skipped"]:
+            rule_list = ", ".join(f"{r['name']}={r['value']}" for r in tie["rules"])
+            print(f"    - {tie['predicate']} (priority {tie['priority']}): {rule_list}")
     print(f"Goal derived? {result.derived}")
+    if result.derived:
+        print(f"Goal value:    {result.solver.goal_value}")
 
     print("\n--- LLM answer ---")
     print(result.answer)
