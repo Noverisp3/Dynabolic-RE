@@ -95,8 +95,8 @@ Dynabolic-RE/
 │   └── CMakeLists.txt
 ├── CMakeLists.txt              # CMake build (cross-platform)
 ├── Makefile                    # Make build (Linux/Mac)
-└── build.bat                   # Windows build script
-└── README.md               # This file
+├── build.bat                   # Windows build script
+└── README.md                   # This file
 ```
 
 ## Build Instructions
