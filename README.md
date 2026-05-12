@@ -238,4 +238,4 @@ python3 -m unittest tests/test_dynabolic_re.py
 
 ## License
 
-Research prototype. Free to use and modify for educational and research purposes.
+This project is licensed under the MIT License. See the LICENSE file for details.
